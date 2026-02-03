@@ -8,7 +8,11 @@
     "test:connection": "node scripts/test-connection.js",
     "scan-log": "node scripts/scan-and-log.js",
     "dev": "cross-env NODE_ENV=development node index.js",
-    "prod": "cross-env NODE_ENV=production node index.js"
+    "prod": "cross-env NODE_ENV=production node index.js",
+    "install-service": "node scripts/install-service.js",
+    "uninstall-service": "node scripts/uninstall-service.js",
+    "build:exe": "pkg . --targets node18-win-x64 --output dist/coopxv-extract.exe",
+    "package": "node scripts/create-installer.js"
   },
   "keywords": [
     "coopxv",
@@ -19,13 +23,26 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "cross-env": "^7.0.3"
+    "cross-env": "^7.0.3",
+    "pkg": "^5.8.1"
   },
   "dependencies": {
     "dotenv": "^16.3.1",
     "mongoose": "^8.0.3",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^4.7.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "node-windows": "^1.0.0-beta.8"
+  },
+  "pkg": {
+    "assets": [
+      "config/**/*",
+      "models/**/*",
+      "scripts/**/*"
+    ],
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist"
   }
 }
