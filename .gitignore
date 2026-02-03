@@ -26,7 +26,7 @@ node_modules/
 # BUILD OUTPUTS
 # ===================================
 build/
-dist/
+
 coverage/
 client/build/
 server/build/

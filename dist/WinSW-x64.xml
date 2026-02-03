@@ -1,0 +1,9 @@
+<service>
+  <id>CoopXV-extract</id>
+  <name>CoopXV-extract</name>
+  <description>CoopXV Excel Data Extractor - Monitors Excel files 24/7</description>
+  <executable>G:\CoopXV\coopxv-extract.exe</executable>
+  <log mode="roll"></log>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="20 sec"/>
+</service>

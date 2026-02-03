@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Node.js Windows service for monitoring Excel files and extracting data to MongoDB Atlas",
   "main": "index.js",
+  "bin": "index.js", 
   "scripts": {
     "setup": "node scripts/setup-env.js",
     "test:connection": "node scripts/test-connection.js",
