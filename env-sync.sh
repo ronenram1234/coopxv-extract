@@ -95,6 +95,25 @@ install_dependencies() {
     fi
 }
 
+# Function to rebuild coopxv-extract in dist folder
+rebuild_coopxv_extract() {
+    print_info "Rebuilding coopxv-extract (dist)..."
+    if command -v npm >/dev/null 2>&1; then
+        set +e
+        npm run build:exe
+        npm_exit=$?
+        set -e
+
+        if [ $npm_exit -eq 0 ]; then
+            print_status "Rebuild completed successfully (npm run build:exe)"
+        else
+            print_warning "Rebuild exited with code $npm_exit"
+        fi
+    else
+        print_error "npm not found. Please install Node.js/npm or run your package manager manually."
+    fi
+}
+
 # Function to remove all .md files
 remove_md_files() {
     print_warning "This will DELETE all *.md files from all folders"
@@ -450,6 +469,7 @@ show_menu() {
     echo ""
     echo "Available actions:"
     echo "  13) Create project archive (coopxv-extract.tar.gz - replaces previous)"
+    echo "  14) Rebuild coopxv-extract (dist)"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -462,6 +482,7 @@ while true; do
     
     case $choice in
         13) create_project_archive ;;
+        14) rebuild_coopxv_extract ;;
         0) clean_exit ;;
         *) print_error "Invalid option. Please try again." ;;
     esac

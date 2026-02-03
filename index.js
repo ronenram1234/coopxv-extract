@@ -26,10 +26,12 @@ const mongoose = require('mongoose');
 const {
   environment,
   scanInterval,
+  logRetentionDays,
   mongoUri,
   mongooseOptions
 } = require('./config/database');
 const { runScan } = require('./scripts/scan-and-log');
+const { cleanupOldScansAndLines } = require('./scripts/cleanup-old-scans');
 // [2026-02-03] winston-migration: Replace console.log with structured logging
 const logger = require('./config/logger');
 const { formatTimestampIsrael } = require('./config/logger');
@@ -38,6 +40,7 @@ const SEPARATOR = '='.repeat(70);
 // [2026-02-03] statistics-tracking: Track total scans for shutdown message
 let scanCount = 0;
 let intervalHandle = null;
+let cleanupIntervalHandle = null;
 let shuttingDown = false;
 
 function logBanner() {
@@ -104,6 +107,16 @@ async function main() {
   logger.info(`✅ Service is now running. Scanning every ${scanInterval} minute(s).`);
   logger.info('Press Ctrl+C to stop.\n');
 
+  // Daily cleanup: remove scans and extracted_lines older than LOG_RETENTION_DAYS
+  function runCleanup() {
+    cleanupOldScansAndLines(logRetentionDays).catch((err) => {
+      logger.error('❌ Daily cleanup error:', err.message || err);
+    });
+  }
+  setTimeout(runCleanup, 60 * 1000);
+  cleanupIntervalHandle = setInterval(runCleanup, 24 * 60 * 60 * 1000);
+  logger.info(`🧹 Daily cleanup scheduled (retention: ${logRetentionDays} days). First run in 1 min.\n`);
+
   registerShutdownHandlers();
 }
 
@@ -124,6 +137,9 @@ async function handleShutdown(signal) {
   logger.warn(`\n⚠️  Shutdown signal received (${signal})`);
   if (intervalHandle) {
     clearInterval(intervalHandle);
+  }
+  if (cleanupIntervalHandle) {
+    clearInterval(cleanupIntervalHandle);
   }
   logger.info(`📊 Total scans completed: ${scanCount}`);
   logger.info('🔌 Disconnecting from MongoDB...');
