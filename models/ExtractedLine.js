@@ -22,6 +22,7 @@ const extractedLineSchema = new Schema(
     sheetName: { type: String, required: true, trim: true },
     rowNumber: { type: Number, required: true, min: 1 },
     data: { type: Schema.Types.Mixed, required: true, default: {} },
+    display: { type: Schema.Types.Mixed, required: false, default: {} },
     metadata: { type: metadataSchema, required: true }
   },
   {

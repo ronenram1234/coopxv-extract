@@ -132,17 +132,21 @@ function cellToText(value) {
   return String(value);
 }
 
+function getLastMeaningfulIndex(rowArray) {
+  const row = Array.isArray(rowArray) ? rowArray : [];
+  for (let i = row.length - 1; i >= 0; i -= 1) {
+    if (isMeaningfulCellValue(row[i])) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function buildDataAndMetadataFromRow(rowArray) {
   const row = Array.isArray(rowArray) ? rowArray : [];
   const columnCount = row.length;
 
-  let lastMeaningfulIndex = -1;
-  for (let i = row.length - 1; i >= 0; i -= 1) {
-    if (isMeaningfulCellValue(row[i])) {
-      lastMeaningfulIndex = i;
-      break;
-    }
-  }
+  const lastMeaningfulIndex = getLastMeaningfulIndex(row);
 
   const hasData = row.some((v) => isMeaningfulCellValue(v));
   const maxIndexToStore = Math.max(0, lastMeaningfulIndex);
@@ -160,6 +164,29 @@ function buildDataAndMetadataFromRow(rowArray) {
   };
 
   return { data, metadata };
+}
+
+function buildDisplayFromSheetRow(sheet, rowNumber, rowArray) {
+  const row = Array.isArray(rowArray) ? rowArray : [];
+  const lastMeaningfulIndex = getLastMeaningfulIndex(row);
+  const maxIndexToStore = Math.max(0, lastMeaningfulIndex);
+  const display = {};
+
+  for (let i = 0; i <= maxIndexToStore; i += 1) {
+    const columnLetter = indexToColumnLetter(i);
+    const cellRef = `${columnLetter}${rowNumber}`;
+    const cell = sheet ? sheet[cellRef] : undefined;
+
+    if (cell && cell.w != null) {
+      display[columnLetter] = String(cell.w);
+    } else if (cell && cell.v != null) {
+      display[columnLetter] = cellToText(cell.v);
+    } else {
+      display[columnLetter] = '';
+    }
+  }
+
+  return display;
 }
 
 function normalizeStoredDataToText(data) {
@@ -207,6 +234,7 @@ function areRowsEqualAsText(storedDoc, candidateRowArray) {
 /** Convert ExtractedLine document to Excel row array. */
 function extractedLineToExcelRow(doc) {
   const dataKeys = Object.keys(doc.data || {}).sort();
+  const displayData = doc.display || {};
   const row = [
     doc.filename,
     doc.sheetName,
@@ -215,7 +243,11 @@ function extractedLineToExcelRow(doc) {
   ];
   // Add all data columns in sorted order
   for (const key of dataKeys) {
-    row.push(doc.data[key]);
+    if (Object.prototype.hasOwnProperty.call(displayData, key)) {
+      row.push(displayData[key]);
+    } else {
+      row.push(doc.data[key]);
+    }
   }
   return row;
 }
@@ -489,6 +521,7 @@ async function runScan() {
           lastRowCount += 1;
 
           const { data, metadata } = buildDataAndMetadataFromRow(rowData);
+          const display = buildDisplayFromSheetRow(sheet, next.rowNumber, rowData);
           extractedLinesToInsert.push({
             timestamp: scanStartedAt,
             filePath,
@@ -497,6 +530,7 @@ async function runScan() {
             sheetName,
             rowNumber: next.rowNumber,
             data,
+            display,
             metadata
           });
         } else {
