@@ -6,8 +6,9 @@
   "scripts": {
     "setup": "node scripts/setup-env.js",
     "test:connection": "node scripts/test-connection.js",
-    "dev": "NODE_ENV=development node index.js",
-    "prod": "NODE_ENV=production node index.js"
+    "scan-log": "node scripts/scan-and-log.js",
+    "dev": "cross-env NODE_ENV=development node index.js",
+    "prod": "cross-env NODE_ENV=production node index.js"
   },
   "keywords": [
     "coopxv",
@@ -17,8 +18,12 @@
   ],
   "author": "",
   "license": "ISC",
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  },
   "dependencies": {
     "dotenv": "^16.3.1",
-    "mongoose": "^8.0.3"
+    "mongoose": "^8.0.3",
+    "xlsx": "^0.18.5"
   }
 }

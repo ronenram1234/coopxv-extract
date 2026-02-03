@@ -56,6 +56,7 @@ const mongoUri = getMongoUri();
 const scanInterval = getNumber('SCAN_INTERVAL_MINUTES', 5);
 const rootDirectory = getString('ROOT_DIRECTORY', 'C:\\CoopXV');
 const filePattern = getString('FILE_PATTERN', 'cxv*.xlsx');
+const logDirectory = getString('LOG_DIRECTORY', path.join(process.cwd(), 'logs'));
 const logRetentionDays = getNumber('LOG_RETENTION_DAYS', 30);
 
 const mongooseOptions = {
@@ -83,6 +84,7 @@ if (environment !== 'test') {
   console.log('   Scan interval (min):', scanInterval);
   console.log('   Root directory:', rootDirectory);
   console.log('   File pattern:', filePattern);
+  console.log('   Log directory:', logDirectory);
   console.log('   Log retention (days):', logRetentionDays);
   console.log(SEPARATOR + '\n');
 }
@@ -93,6 +95,7 @@ module.exports = {
   scanInterval,
   rootDirectory,
   filePattern,
+  logDirectory,
   logRetentionDays,
   mongooseOptions
 };
