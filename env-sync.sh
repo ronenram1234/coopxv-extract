@@ -76,23 +76,22 @@ sync_all_environments() {
     print_status "All environments synced successfully"
 }
 
-# Function to run pnpm install in all directories
-# Simplified: install dependencies at project root using pnpm
+# Function to run npm install at project root
 install_dependencies() {
     print_info "Installing dependencies at project root..."
-    if command -v pnpm >/dev/null 2>&1; then
+    if command -v npm >/dev/null 2>&1; then
         set +e
-        pnpm install
-        pnpm_exit=$?
+        npm install
+        npm_exit=$?
         set -e
 
-        if [ $pnpm_exit -eq 0 ]; then
-            print_status "Dependencies installed successfully (pnpm)"
+        if [ $npm_exit -eq 0 ]; then
+            print_status "Dependencies installed successfully (npm)"
         else
-            print_warning "pnpm install exited with code $pnpm_exit"
+            print_warning "npm install exited with code $npm_exit"
         fi
     else
-        print_error "pnpm not found. Please install pnpm or run your package manager manually."
+        print_error "npm not found. Please install Node.js/npm or run your package manager manually."
     fi
 }
 

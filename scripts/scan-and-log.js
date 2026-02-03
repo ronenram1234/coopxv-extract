@@ -180,21 +180,129 @@ function areRowsEqualAsText(storedDoc, candidateRowArray) {
   const storedKeys = Object.keys(storedDataText).sort();
   const candidateKeys = Object.keys(candidateData).sort();
 
-  if (storedKeys.length !== candidateKeys.length) {
-    return false;
-  }
+  // Find the maximum column letter present in either dataset
+  const allKeys = new Set([...storedKeys, ...candidateKeys]);
+  const sortedAllKeys = Array.from(allKeys).sort();
 
-  for (let i = 0; i < storedKeys.length; i += 1) {
-    const key = storedKeys[i];
-    if (key !== candidateKeys[i]) {
-      return false;
+  // Compare all columns that exist in either dataset
+  for (const key of sortedAllKeys) {
+    const storedVal = storedDataText[key] || '';
+    const candidateVal = candidateData[key] || '';
+    const storedText = String(storedVal).trim();
+    const candidateText = String(candidateVal).trim();
+
+    // Skip trailing empty columns (if both are empty and this is beyond the last non-empty column)
+    if (storedText === '' && candidateText === '') {
+      continue;
     }
-    if (storedDataText[key] !== cellToText(candidateData[key])) {
+
+    if (storedText !== candidateText) {
       return false;
     }
   }
 
   return true;
+}
+
+/** Convert ExtractedLine document to Excel row array. */
+function extractedLineToExcelRow(doc) {
+  const dataKeys = Object.keys(doc.data || {}).sort();
+  const row = [
+    doc.filename,
+    doc.sheetName,
+    doc.rowNumber,
+    formatTimestampIsrael(doc.timestamp)
+  ];
+  // Add all data columns in sorted order
+  for (const key of dataKeys) {
+    row.push(doc.data[key]);
+  }
+  return row;
+}
+
+/** Generate Excel header row from inserted documents. */
+function getExcelHeaderRow(insertedDocs) {
+  // Collect all unique data column keys across all inserted documents
+  const allDataKeys = new Set();
+  for (const doc of insertedDocs) {
+    if (doc.data) {
+      Object.keys(doc.data).forEach((key) => allDataKeys.add(key));
+    }
+  }
+  const sortedDataKeys = Array.from(allDataKeys).sort();
+  return ['filename', 'sheetName', 'rowNumber', 'timestamp', ...sortedDataKeys];
+}
+
+/** Append ExtractedLine documents to Excel file. */
+async function appendExtractedLinesToExcel(insertedDocs) {
+  if (!insertedDocs || insertedDocs.length === 0) return;
+
+  const excelPath = getScanResultsExcelPath();
+  let existingRows = [];
+  let hasHeader = false;
+
+  // Read existing file if it exists
+  if (fs.existsSync(excelPath)) {
+    try {
+      const existingWb = XLSX.readFile(excelPath, { type: 'file', cellDates: true });
+      const existingWs =
+        existingWb.Sheets['Scan Results'] ||
+        (existingWb.SheetNames && existingWb.SheetNames.length > 0
+          ? existingWb.Sheets[existingWb.SheetNames[0]]
+          : null);
+      if (existingWs) {
+        existingRows = XLSX.utils.sheet_to_json(existingWs, { header: 1, defval: '' });
+        hasHeader = existingRows.length > 0;
+      }
+    } catch (readErr) {
+      logger.warn(`⚠️  Failed to read existing Excel log: ${readErr.message}`);
+    }
+  }
+
+  // Get header row (use existing if present, otherwise generate from inserted docs)
+  let headerRow = hasHeader ? existingRows[0] : getExcelHeaderRow(insertedDocs);
+  const dataRows = hasHeader ? existingRows.slice(1) : [];
+
+  // If existing header exists, merge with new documents' columns to ensure all columns are included
+  if (hasHeader) {
+    const newHeader = getExcelHeaderRow(insertedDocs);
+    const existingHeaderSet = new Set(headerRow);
+    const allHeaderKeys = new Set([...headerRow, ...newHeader]);
+    headerRow = Array.from(allHeaderKeys);
+  }
+
+  // Convert inserted documents to Excel rows
+  const newRows = insertedDocs.map((doc) => extractedLineToExcelRow(doc));
+
+  // Ensure all rows have same number of columns as header
+  const headerLength = headerRow.length;
+  const paddedNewRows = newRows.map((row) => {
+    const padded = [...row];
+    while (padded.length < headerLength) {
+      padded.push('');
+    }
+    return padded.slice(0, headerLength);
+  });
+
+  // Pad existing data rows to match new header length (in case header expanded)
+  const paddedDataRows = dataRows.map((row) => {
+    const padded = [...row];
+    while (padded.length < headerLength) {
+      padded.push('');
+    }
+    return padded.slice(0, headerLength);
+  });
+
+  // Combine existing data rows with new rows
+  const allRows = [headerRow, ...paddedDataRows, ...paddedNewRows];
+
+  // Write Excel file
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(allRows);
+  XLSX.utils.book_append_sheet(wb, ws, 'Scan Results');
+  XLSX.writeFile(wb, excelPath);
+
+  logger.info(`💾 Appended ${insertedDocs.length} extracted line(s) to ${excelPath}`);
 }
 
 async function runScan() {
@@ -248,7 +356,6 @@ async function runScan() {
   };
   let fieldNameCount = 0;
   let lastRowCount = 0;
-  const excelRows = [];
   const filesProcessed = [];
   const extractedLinesToInsert = [];
   const totalFiles = matchingFiles.length;
@@ -287,11 +394,6 @@ async function runScan() {
     for (const sheetName of sheetNames) {
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-      const timestamp = dateTime();
-
-      if (logExcelLinesToExtract) {
-        excelRows.push([filename, timestamp]);
-      }
 
       if (rows.length > 0) {
         const headerRow = rows[0];
@@ -303,37 +405,77 @@ async function runScan() {
             fieldNameCount += 1;
           }
         }
-        if (logExcelLinesToExtract && fieldNames.length > 0) {
-          excelRows.push(fieldNames);
-        }
       }
 
-      let lastMatch = null;
-      let lastMatchRowIndex = -1;
+      const candidates = [];
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
         const row = rows[rowIndex];
         const colA = Array.isArray(row) ? row[0] : undefined;
         if (isColumnAOne(colA)) {
-          lastMatch = row;
-          lastMatchRowIndex = rowIndex + 1;
+          candidates.push({
+            rowNumber: rowIndex + 1,
+            rowArray: row
+          });
         }
       }
 
-      if (lastMatch != null) {
-        logger.info(`   ✓ Found last row with A=1 at row ${lastMatchRowIndex} in sheet "${sheetName}"`);
-        const rowData = Array.isArray(lastMatch) ? lastMatch : [];
-        if (logExcelLinesToExtract) {
-          excelRows.push(rowData);
-        }
-        let isNewRow = true;
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => a.rowNumber - b.rowNumber);
+
+        let lastProcessedRowNumber = 0;
+        let previous = null;
 
         if (dbReady) {
           try {
-            const previous = await ExtractedLine.findOne({ filePath, sheetName })
-              .sort({ timestamp: -1, _id: -1 })
+            previous = await ExtractedLine.findOne({ filePath, sheetName })
+              .sort({ rowNumber: -1, timestamp: -1, _id: -1 })
               .lean();
-            if (previous && areRowsEqualAsText(previous, rowData)) {
+            if (previous && typeof previous.rowNumber === 'number') {
+              lastProcessedRowNumber = previous.rowNumber;
+            }
+          } catch (error) {
+            logger.warn(
+              `⚠️  Failed to load last processed row for ${filePath} [${sheetName}]: ${error.message}`
+            );
+          }
+        }
+
+        const updatedCandidate =
+          lastProcessedRowNumber > 0
+            ? candidates.find((c) => c.rowNumber === lastProcessedRowNumber)
+            : null;
+        const nextNewCandidate = candidates.find((c) => c.rowNumber > lastProcessedRowNumber);
+        const next = nextNewCandidate || updatedCandidate || null;
+
+        if (!next) {
+          logger.info(
+            `   ↪ No new rows with A=1 to process for sheet "${sheetName}" in file ${filename}`
+          );
+          continue;
+        }
+
+        const rowData = Array.isArray(next.rowArray) ? next.rowArray : [];
+        logger.info(
+          `   ✓ Selected next row with A=1 at row ${next.rowNumber} in sheet "${sheetName}"`
+        );
+        let isNewRow = true;
+
+        // Only treat as \"not new\" when we are re-checking the same physical row
+        if (dbReady && previous && next.rowNumber === previous.rowNumber) {
+          try {
+            const rowsEqual = areRowsEqualAsText(previous, rowData);
+            if (rowsEqual) {
               isNewRow = false;
+            } else {
+              // Debug: Log why comparison failed for this specific file
+              const { data: candidateData } = buildDataAndMetadataFromRow(rowData);
+              const storedDataText = normalizeStoredDataToText(previous.data);
+              logger.info(
+                `   ↪ Row ${next.rowNumber} content changed for ${filename} [${sheetName}]; will insert new line`
+              );
+              logger.debug(
+                `   Debug: stored keys: ${Object.keys(storedDataText).join(', ')}, candidate keys: ${Object.keys(candidateData).join(', ')}`
+              );
             }
           } catch (error) {
             logger.warn(
@@ -353,13 +495,13 @@ async function runScan() {
             folder,
             filename,
             sheetName,
-            rowNumber: lastMatchRowIndex,
+            rowNumber: next.rowNumber,
             data,
             metadata
           });
         } else {
           logger.info(
-            `   ↪ Last row with A=1 unchanged for sheet "${sheetName}" in file ${filename}; skipping insert`
+            `   ↪ Next row with A=1 unchanged for sheet "${sheetName}" in file ${filename}; skipping insert`
           );
         }
       }
@@ -377,20 +519,6 @@ async function runScan() {
 
   stats.fieldNamesFound = fieldNameCount;
   stats.lastRowsFound = lastRowCount;
-
-  if (logExcelLinesToExtract && excelRows.length > 0) {
-    try {
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(excelRows);
-      XLSX.utils.book_append_sheet(wb, ws, 'Scan Results');
-      const excelPath = getScanResultsExcelPath();
-      XLSX.writeFile(wb, excelPath);
-      stats.logFile = excelPath;
-      logger.info(`💾 Scan data logged to: ${stats.logFile}`);
-    } catch (error) {
-      logger.warn(`⚠️  Failed to write Excel: ${error.message}`);
-    }
-  }
 
   if (!dbReady) {
     logger.info('ℹ️  MongoDB not connected; skipping persistence to scans/extracted_lines');
@@ -430,10 +558,16 @@ async function runScan() {
 
   if (extractedLinesToInsert.length > 0) {
     try {
-      await ExtractedLine.insertMany(
+      const insertedDocs = await ExtractedLine.insertMany(
         extractedLinesToInsert.map((line) => ({ ...line, scanId: scanDoc._id })),
         { ordered: true }
       );
+
+      // Write Excel immediately after successful MongoDB insert
+      if (logExcelLinesToExtract) {
+        await appendExtractedLinesToExcel(insertedDocs);
+        stats.logFile = getScanResultsExcelPath();
+      }
     } catch (error) {
       logger.error('❌ Failed to write extracted_lines documents:', {
         error: error.message,
