@@ -15,6 +15,7 @@
  */
 
 const path = require('path');
+const dns = require('dns');
 const SEPARATOR = '='.repeat(50);
 const TEST_COLLECTION = '_connection_test';
 const CONNECT_TIMEOUT_MS = 10000;
@@ -63,6 +64,9 @@ async function run() {
   console.log(SEPARATOR);
 
   loadEnv();
+  // Use Google DNS for SRV lookup when system DNS fails (e.g. ECONNREFUSED)
+  dns.setServers(['8.8.8.8', '8.8.4.4']);
+
   const uri = getMongoUri();
   console.log('\n🔧 NODE_ENV:', process.env.NODE_ENV || 'development');
   console.log('📊 Connection:', maskUri(uri));

@@ -16,11 +16,14 @@
 
 const path = require('path');
 const fs = require('fs');
+const dns = require('dns');
 
 const envPath = path.join(process.cwd(), '.env');
 if (fs.existsSync(envPath)) {
   require('dotenv').config({ path: envPath });
 }
+// Use Google DNS for mongodb+srv SRV lookup when system DNS fails (e.g. ECONNREFUSED)
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 const environment = (process.env.NODE_ENV || 'development').toLowerCase();
 const isProd = environment === 'production';
