@@ -28,6 +28,20 @@ const DailyRotateFile = require('winston-daily-rotate-file');
 
 const { logDirectory, logRetentionDays } = require('./database');
 
+/** Format a date in Israel timezone (Asia/Jerusalem) for all application logging. */
+function formatTimestampIsrael(date = new Date()) {
+  return new Date(date).toLocaleString('en-CA', {
+    timeZone: 'Asia/Jerusalem',
+    dateStyle: 'short',
+    timeStyle: 'medium'
+  });
+}
+
+/** Israel date only (YYYY-MM-DD) for filenames. */
+function formatDateIsrael(date = new Date()) {
+  return new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
+}
+
 // [2026-02-03] winston-migration: Ensure log directory exists before creating transports
 if (!fs.existsSync(logDirectory)) {
   fs.mkdirSync(logDirectory, { recursive: true });
@@ -44,29 +58,27 @@ const dailyRotateOpts = (name, level) => ({
   options: { flags: 'a', encoding: 'utf8' }
 });
 
+const israelTimeFormat = winston.format((info) => {
+  info.timestamp = formatTimestampIsrael(new Date());
+  return info;
+})();
+
 const appFileFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  israelTimeFormat,
   winston.format.printf(({ timestamp, level, message }) => `${timestamp} [${level}]: ${message}`)
 );
 
 const errorFileFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  israelTimeFormat,
   winston.format.errors({ stack: true }),
   winston.format.printf(({ timestamp, level, message, stack }) =>
     stack ? `${timestamp} [${level}]: ${message}\n${stack}` : `${timestamp} [${level}]: ${message}`
   )
 );
 
-// [2026-02-03] winston-migration: JSON one-line per entry for scan-results
-const scanResultsFormat = winston.format.printf((info) => {
-  const { level, message, timestamp, ...rest } = info;
-  const out = { timestamp: info.timestamp || new Date().toISOString(), level: level || 'info', ...rest };
-  return JSON.stringify(out);
-});
-
 const consoleFormat = winston.format.combine(
   winston.format.colorize(),
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+  israelTimeFormat,
   winston.format.printf(({ timestamp, level, message }) => `${timestamp} ${level}: ${message}`)
 );
 
@@ -90,59 +102,13 @@ const logger = winston.createLogger({
   transports: [applicationTransport, errorTransport, consoleTransport]
 });
 
-// [2026-02-03] winston-migration: Separate logger for structured scan-results (JSON only)
-const scanResultsTransport = new DailyRotateFile({
-  ...dailyRotateOpts('scan-results', 'info'),
-  format: scanResultsFormat
-});
-
-const scanResultsLogger = winston.createLogger({
-  level: 'info',
-  transports: [scanResultsTransport]
-});
-
-/** Log field name to scan-results (JSON). */
-function logFieldName(dateTime, filePath, sheetName, fieldName) {
-  scanResultsLogger.info('', {
-    timestamp: dateTime,
-    type: 'field_name',
-    filePath,
-    sheetName,
-    fieldName
-  });
-}
-
-/** Log last row to scan-results (JSON). */
-function logLastRow(dateTime, filePath, sheetName, rowNumber, rowData) {
-  scanResultsLogger.info('', {
-    timestamp: dateTime,
-    type: 'last_row',
-    filePath,
-    sheetName,
-    rowNumber,
-    rowData: Array.isArray(rowData) ? rowData : []
-  });
-}
-
-/** Log scan summary to scan-results (JSON). */
-function logScanSummary(stats) {
-  scanResultsLogger.info('', {
-    timestamp: new Date().toISOString(),
-    type: 'scan_summary',
-    filesScanned: stats.filesScanned ?? 0,
-    filesWithErrors: stats.filesWithErrors ?? 0,
-    fieldNamesFound: stats.fieldNamesFound ?? 0,
-    lastRowsFound: stats.lastRowsFound ?? 0
-  });
-}
-
-function getScanResultsLogPath() {
-  const today = new Date().toISOString().slice(0, 10);
-  return path.join(logDirectory, `scan-results-${today}.log`);
+/** Path for daily scan-results Excel file (Israel date). */
+function getScanResultsExcelPath() {
+  const dateStr = formatDateIsrael(new Date()).replace(/\//g, '-');
+  return path.join(logDirectory, `scan-results-${dateStr}.xlsx`);
 }
 
 module.exports = logger;
-module.exports.logFieldName = logFieldName;
-module.exports.logLastRow = logLastRow;
-module.exports.logScanSummary = logScanSummary;
-module.exports.getScanResultsLogPath = getScanResultsLogPath;
+module.exports.formatTimestampIsrael = formatTimestampIsrael;
+module.exports.formatDateIsrael = formatDateIsrael;
+module.exports.getScanResultsExcelPath = getScanResultsExcelPath;

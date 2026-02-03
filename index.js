@@ -32,6 +32,7 @@ const {
 const { runScan } = require('./scripts/scan-and-log');
 // [2026-02-03] winston-migration: Replace console.log with structured logging
 const logger = require('./config/logger');
+const { formatTimestampIsrael } = require('./config/logger');
 
 const SEPARATOR = '='.repeat(70);
 // [2026-02-03] statistics-tracking: Track total scans for shutdown message
@@ -43,7 +44,7 @@ function logBanner() {
   logger.info(SEPARATOR);
   logger.info('🚀 CoopXV-Extract Service Starting');
   logger.info(SEPARATOR);
-  logger.info(`📅 Started at: ${new Date().toISOString()}`);
+  logger.info(`📅 Started at: ${formatTimestampIsrael()}`);
   logger.info(`🔧 Environment: ${environment}`);
   logger.info(`⏱️  Scan interval: ${scanInterval} minute(s)`);
   logger.info(SEPARATOR + '\n');
@@ -55,7 +56,7 @@ async function executeScan() {
   scanCount += 1;
 
   logger.info(SEPARATOR);
-  logger.info(`🔄 Scan #${scanCount} started at ${startedAt.toISOString()}`);
+  logger.info(`🔄 Scan #${scanCount} started at ${formatTimestampIsrael(startedAt)}`);
   logger.info(SEPARATOR + '\n');
 
   try {
@@ -65,7 +66,9 @@ async function executeScan() {
     logger.info(`   🛑 Files with errors: ${stats.filesWithErrors}`);
     logger.info(`   📝 Field names found: ${stats.fieldNamesFound}`);
     logger.info(`   📊 Last rows (A=1): ${stats.lastRowsFound}`);
-    logger.info(`   💾 Log file: ${stats.logFile}`);
+    if (stats.logFile) {
+      logger.info(`   💾 Log file: ${stats.logFile}`);
+    }
   } catch (error) {
     logger.error('❌ Scan failed:', { error: error.message, stack: error.stack });
   } finally {

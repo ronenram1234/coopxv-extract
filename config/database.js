@@ -58,6 +58,9 @@ const rootDirectory = getString('ROOT_DIRECTORY', 'C:\\CoopXV');
 const filePattern = getString('FILE_PATTERN', 'cxv*.xlsx');
 const logDirectory = getString('LOG_DIRECTORY', path.join(process.cwd(), 'logs'));
 const logRetentionDays = getNumber('LOG_RETENTION_DAYS', 30);
+// When true, write extracted lines (header + last row per sheet) to daily Excel file scan-results-YYYY-MM-DD.xlsx
+const logExcelLinesToExtract =
+  getString('LOG_EXCEL_LINES_TO_EXTRACT', 'false').toLowerCase() === 'true';
 
 const mongooseOptions = {
   serverSelectionTimeoutMS: 10000,
@@ -86,6 +89,7 @@ if (environment !== 'test') {
   console.log('   File pattern:', filePattern);
   console.log('   Log directory:', logDirectory);
   console.log('   Log retention (days):', logRetentionDays);
+  console.log('   Log Excel lines to extract:', logExcelLinesToExtract);
   console.log(SEPARATOR + '\n');
 }
 
@@ -97,5 +101,6 @@ module.exports = {
   filePattern,
   logDirectory,
   logRetentionDays,
+  logExcelLinesToExtract,
   mongooseOptions
 };

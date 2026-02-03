@@ -25,20 +25,22 @@
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
+const mongoose = require('mongoose');
 
 const {
+  environment,
   rootDirectory,
   filePattern,
-  logDirectory
+  logDirectory,
+  logExcelLinesToExtract
 } = require('../config/database');
-// [2026-02-03] winston-migration: Log field names to structured JSON file
 const logger = require('../config/logger');
 const {
-  logFieldName,
-  logLastRow,
-  logScanSummary,
-  getScanResultsLogPath
+  formatTimestampIsrael,
+  getScanResultsExcelPath
 } = require('../config/logger');
+const Scan = require('../models/Scan');
+const ExtractedLine = require('../models/ExtractedLine');
 
 /** Convert glob pattern (e.g. *.xlsx) to a RegExp for matching basenames. */
 function patternToRegex(glob) {
@@ -96,20 +98,145 @@ function isColumnAOne(value) {
   return value === '1';
 }
 
-/** ISO 8601 timestamp for log lines. */
+/** Timestamp in Israel timezone for scan/Excel. */
 function dateTime() {
-  return new Date().toISOString();
+  return formatTimestampIsrael(new Date());
+}
+
+/** Convert 0-based column index to Excel column letters (0->A, 25->Z, 26->AA, ...). */
+function indexToColumnLetter(index) {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error(`Invalid column index: ${index}`);
+  }
+  let n = index + 1;
+  let result = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
+function isMeaningfulCellValue(value) {
+  if (value == null) return false;
+  if (typeof value === 'string') return value.trim() !== '';
+  return true;
+}
+
+function cellToText(value) {
+  if (value == null) return '';
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return String(value);
+}
+
+function buildDataAndMetadataFromRow(rowArray) {
+  const row = Array.isArray(rowArray) ? rowArray : [];
+  const columnCount = row.length;
+
+  let lastMeaningfulIndex = -1;
+  for (let i = row.length - 1; i >= 0; i -= 1) {
+    if (isMeaningfulCellValue(row[i])) {
+      lastMeaningfulIndex = i;
+      break;
+    }
+  }
+
+  const hasData = row.some((v) => isMeaningfulCellValue(v));
+  const maxIndexToStore = Math.max(0, lastMeaningfulIndex);
+
+  const data = {};
+  for (let i = 0; i <= maxIndexToStore; i += 1) {
+    data[indexToColumnLetter(i)] = cellToText(row[i]);
+  }
+
+  const metadata = {
+    columnCount,
+    firstColumn: 'A',
+    lastColumn: indexToColumnLetter(maxIndexToStore),
+    hasData
+  };
+
+  return { data, metadata };
+}
+
+function normalizeStoredDataToText(data) {
+  if (!data || typeof data !== 'object') {
+    return {};
+  }
+  const normalized = {};
+  for (const [key, value] of Object.entries(data)) {
+    normalized[key] = cellToText(value);
+  }
+  return normalized;
+}
+
+function areRowsEqualAsText(storedDoc, candidateRowArray) {
+  const storedDataText = normalizeStoredDataToText(storedDoc && storedDoc.data);
+  const { data: candidateData } = buildDataAndMetadataFromRow(candidateRowArray);
+
+  const storedKeys = Object.keys(storedDataText).sort();
+  const candidateKeys = Object.keys(candidateData).sort();
+
+  if (storedKeys.length !== candidateKeys.length) {
+    return false;
+  }
+
+  for (let i = 0; i < storedKeys.length; i += 1) {
+    const key = storedKeys[i];
+    if (key !== candidateKeys[i]) {
+      return false;
+    }
+    if (storedDataText[key] !== cellToText(candidateData[key])) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 async function runScan() {
   // [2026-02-03] winston-migration: Logger ensures log dir on load
+  const scanStartedAt = new Date();
+  const scanStartMs = Date.now();
+  const dbReady = mongoose.connection && mongoose.connection.readyState === 1;
+  let scanNumber = null;
+
+  if (dbReady) {
+    try {
+      scanNumber = (await Scan.countDocuments()) + 1;
+    } catch (error) {
+      logger.warn(`⚠️  Failed to compute scanNumber: ${error.message}`);
+    }
+  }
+
   logger.info('📂 Ensuring log directory exists...');
   logger.info(`🔍 Scanning directory: ${rootDirectory}`);
   logger.info(`🔍 Looking for pattern: ${filePattern}`);
 
   const regex = patternToRegex(filePattern);
   const allFiles = walkSync(rootDirectory);
-  const matchingFiles = allFiles.filter((file) => matchesPattern(file, regex));
+  const logDirNormalized =
+    typeof logDirectory === 'string' && logDirectory
+      ? path.resolve(logDirectory).toLowerCase()
+      : null;
+
+  const matchingFiles = allFiles
+    // Exclude any file under LOG_DIRECTORY
+    .filter((file) => {
+      if (!logDirNormalized) return true;
+      const normalizedFile = path.resolve(file).toLowerCase();
+      return !normalizedFile.startsWith(logDirNormalized);
+    })
+    // Apply FILE_PATTERN
+    .filter((file) => matchesPattern(file, regex))
+    // Exclude scan*.xlsx files (e.g. scan-results-YYYY-MM-DD.xlsx)
+    .filter((file) => {
+      const base = path.basename(file).toLowerCase();
+      return !(base.startsWith('scan') && base.endsWith('.xlsx'));
+    });
   logger.info(`📄 Found ${matchingFiles.length} matching file(s) out of ${allFiles.length} total`);
 
   const stats = {
@@ -121,35 +248,63 @@ async function runScan() {
   };
   let fieldNameCount = 0;
   let lastRowCount = 0;
+  const excelRows = [];
+  const filesProcessed = [];
+  const extractedLinesToInsert = [];
+  const totalFiles = matchingFiles.length;
+  let successfulFiles = 0;
+  let errorFiles = 0;
 
   for (const filePath of matchingFiles) {
-    logger.info(`   Processing: ${path.basename(filePath)}`);
+    const folder = path.dirname(filePath);
+    const filename = path.basename(filePath);
+    logger.info(`   Processing: ${filename}`);
+
     let workbook;
     try {
       workbook = XLSX.readFile(filePath, { type: 'file', cellDates: true });
       stats.filesScanned += 1;
+      successfulFiles += 1;
     } catch (error) {
       stats.filesWithErrors += 1;
+      errorFiles += 1;
       logger.warn(`   ❌ Error reading ${filePath}: ${error.message}`);
+      filesProcessed.push({
+        folder,
+        filename,
+        fullPath: filePath,
+        status: 'error',
+        rowsExtracted: 0,
+        error: error.message
+      });
       continue;
     }
 
     const sheetNames = workbook.SheetNames || [];
     logger.info(`   📊 Found ${sheetNames.length} sheet(s)`);
+    let rowsExtractedForFile = 0;
 
     for (const sheetName of sheetNames) {
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
       const timestamp = dateTime();
 
+      if (logExcelLinesToExtract) {
+        excelRows.push([filename, timestamp]);
+      }
+
       if (rows.length > 0) {
         const headerRow = rows[0];
+        const fieldNames = [];
         for (let col = 0; col < headerRow.length; col += 1) {
           const fieldName = headerRow[col] != null ? String(headerRow[col]).trim() : '';
           if (fieldName !== '') {
-            logFieldName(timestamp, filePath, sheetName, fieldName);
+            fieldNames.push(fieldName);
             fieldNameCount += 1;
           }
+        }
+        if (logExcelLinesToExtract && fieldNames.length > 0) {
+          excelRows.push(fieldNames);
         }
       }
 
@@ -167,24 +322,126 @@ async function runScan() {
       if (lastMatch != null) {
         logger.info(`   ✓ Found last row with A=1 at row ${lastMatchRowIndex} in sheet "${sheetName}"`);
         const rowData = Array.isArray(lastMatch) ? lastMatch : [];
-        logLastRow(timestamp, filePath, sheetName, lastMatchRowIndex, rowData);
-        lastRowCount += 1;
+        if (logExcelLinesToExtract) {
+          excelRows.push(rowData);
+        }
+        let isNewRow = true;
+
+        if (dbReady) {
+          try {
+            const previous = await ExtractedLine.findOne({ filePath, sheetName })
+              .sort({ timestamp: -1, _id: -1 })
+              .lean();
+            if (previous && areRowsEqualAsText(previous, rowData)) {
+              isNewRow = false;
+            }
+          } catch (error) {
+            logger.warn(
+              `⚠️  Failed to compare with last stored row for ${filePath} [${sheetName}]: ${error.message}`
+            );
+          }
+        }
+
+        if (isNewRow) {
+          rowsExtractedForFile += 1;
+          lastRowCount += 1;
+
+          const { data, metadata } = buildDataAndMetadataFromRow(rowData);
+          extractedLinesToInsert.push({
+            timestamp: scanStartedAt,
+            filePath,
+            folder,
+            filename,
+            sheetName,
+            rowNumber: lastMatchRowIndex,
+            data,
+            metadata
+          });
+        } else {
+          logger.info(
+            `   ↪ Last row with A=1 unchanged for sheet "${sheetName}" in file ${filename}; skipping insert`
+          );
+        }
       }
     }
+
+    filesProcessed.push({
+      folder,
+      filename,
+      fullPath: filePath,
+      status: rowsExtractedForFile > 0 ? 'success' : 'no_data',
+      rowsExtracted: rowsExtractedForFile,
+      error: null
+    });
   }
 
   stats.fieldNamesFound = fieldNameCount;
   stats.lastRowsFound = lastRowCount;
 
-  logScanSummary({
-    filesScanned: stats.filesScanned,
-    filesWithErrors: stats.filesWithErrors,
-    fieldNamesFound: stats.fieldNamesFound,
-    lastRowsFound: stats.lastRowsFound
+  if (logExcelLinesToExtract && excelRows.length > 0) {
+    try {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(excelRows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Scan Results');
+      const excelPath = getScanResultsExcelPath();
+      XLSX.writeFile(wb, excelPath);
+      stats.logFile = excelPath;
+      logger.info(`💾 Scan data logged to: ${stats.logFile}`);
+    } catch (error) {
+      logger.warn(`⚠️  Failed to write Excel: ${error.message}`);
+    }
+  }
+
+  if (!dbReady) {
+    logger.info('ℹ️  MongoDB not connected; skipping persistence to scans/extracted_lines');
+    return stats;
+  }
+
+  if (scanNumber == null) {
+    logger.info('ℹ️  scanNumber unavailable; skipping persistence to scans/extracted_lines');
+    return stats;
+  }
+
+  const duration = Date.now() - scanStartMs;
+  const scanDoc = new Scan({
+    timestamp: scanStartedAt,
+    scanNumber,
+    environment,
+    statistics: {
+      totalFiles,
+      successfulFiles,
+      errorFiles,
+      fieldNamesFound: fieldNameCount,
+      lastRowsFound: lastRowCount
+    },
+    filesProcessed,
+    duration
   });
 
-  stats.logFile = getScanResultsLogPath();
-  logger.info(`💾 Scan data logged to: ${stats.logFile}`);
+  try {
+    await scanDoc.save();
+  } catch (error) {
+    logger.error('❌ Failed to write scan document:', {
+      error: error.message,
+      stack: error.stack
+    });
+    return stats;
+  }
+
+  if (extractedLinesToInsert.length > 0) {
+    try {
+      await ExtractedLine.insertMany(
+        extractedLinesToInsert.map((line) => ({ ...line, scanId: scanDoc._id })),
+        { ordered: true }
+      );
+    } catch (error) {
+      logger.error('❌ Failed to write extracted_lines documents:', {
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  }
+
   return stats;
 }
 
