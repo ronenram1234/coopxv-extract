@@ -33,6 +33,7 @@ const statisticsSchema = new Schema(
 const scanSchema = new Schema(
   {
     timestamp: { type: Date, required: true, default: Date.now, index: true },
+    localTime: { type: String, required: true, trim: true },
     scanNumber: { type: Number, required: true, index: true },
     environment: { type: String, required: true, trim: true },
     statistics: { type: statisticsSchema, required: true },

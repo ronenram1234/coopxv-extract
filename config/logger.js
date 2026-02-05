@@ -42,6 +42,16 @@ function formatDateIsrael(date = new Date()) {
   return new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Jerusalem' });
 }
 
+/** Local time only (HH:mm) in Israel timezone for scan documents. */
+function formatLocalTimeIsrael(date = new Date()) {
+  return new Date(date).toLocaleTimeString('en-GB', {
+    timeZone: 'Asia/Jerusalem',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+}
+
 // [2026-02-03] winston-migration: Ensure log directory exists before creating transports
 if (!fs.existsSync(logDirectory)) {
   fs.mkdirSync(logDirectory, { recursive: true });
@@ -111,4 +121,5 @@ function getScanResultsExcelPath() {
 module.exports = logger;
 module.exports.formatTimestampIsrael = formatTimestampIsrael;
 module.exports.formatDateIsrael = formatDateIsrael;
+module.exports.formatLocalTimeIsrael = formatLocalTimeIsrael;
 module.exports.getScanResultsExcelPath = getScanResultsExcelPath;

@@ -37,6 +37,7 @@ const {
 const logger = require('../config/logger');
 const {
   formatTimestampIsrael,
+  formatLocalTimeIsrael,
   getScanResultsExcelPath
 } = require('../config/logger');
 const Scan = require('../models/Scan');
@@ -341,8 +342,16 @@ async function runScan() {
   // [2026-02-03] winston-migration: Logger ensures log dir on load
   const scanStartedAt = new Date();
   const scanStartMs = Date.now();
-  const dbReady = mongoose.connection && mongoose.connection.readyState === 1;
+  const connection = mongoose.connection;
+  const dbReady = connection && connection.readyState === 1;
+  const dbName = connection && connection.db ? connection.db.databaseName : 'unknown';
   let scanNumber = null;
+
+  logger.info(
+    `ℹ️  runScan DB state before counting: ready=${dbReady}, readyState=${
+      connection ? connection.readyState : 'none'
+    }, db=${dbName}`
+  );
 
   if (dbReady) {
     try {
@@ -384,7 +393,9 @@ async function runScan() {
     filesWithErrors: 0,
     fieldNamesFound: 0,
     lastRowsFound: 0,
-    logFile: ''
+    logFile: '',
+    scanSaved: false,
+    extractedLinesInserted: 0
   };
   let fieldNameCount = 0;
   let lastRowCount = 0;
@@ -555,18 +566,27 @@ async function runScan() {
   stats.lastRowsFound = lastRowCount;
 
   if (!dbReady) {
-    logger.info('ℹ️  MongoDB not connected; skipping persistence to scans/extracted_lines');
+    logger.warn(
+      'ℹ️  MongoDB not connected; skipping persistence to scans/extracted_lines (no Scan document will be saved)'
+    );
     return stats;
   }
 
   if (scanNumber == null) {
-    logger.info('ℹ️  scanNumber unavailable; skipping persistence to scans/extracted_lines');
+    logger.warn(
+      'ℹ️  scanNumber unavailable; skipping persistence to scans/extracted_lines (no Scan document will be saved)'
+    );
     return stats;
   }
+
+  logger.info(
+    `ℹ️  Persisting scan #${scanNumber} for db=${dbName}: totalFiles=${totalFiles}, filesProcessed=${filesProcessed.length}, extractedLines=${extractedLinesToInsert.length}`
+  );
 
   const duration = Date.now() - scanStartMs;
   const scanDoc = new Scan({
     timestamp: scanStartedAt,
+    localTime: formatLocalTimeIsrael(scanStartedAt),
     scanNumber,
     environment,
     statistics: {
@@ -582,6 +602,8 @@ async function runScan() {
 
   try {
     await scanDoc.save();
+    stats.scanSaved = true;
+    logger.info(`✅ Scan document saved with _id=${scanDoc._id}`);
   } catch (error) {
     logger.error('❌ Failed to write scan document:', {
       error: error.message,
@@ -592,10 +614,15 @@ async function runScan() {
 
   if (extractedLinesToInsert.length > 0) {
     try {
+      logger.info(
+        `ℹ️  Inserting ${extractedLinesToInsert.length} extracted_lines for scanId=${scanDoc._id}`
+      );
       const insertedDocs = await ExtractedLine.insertMany(
         extractedLinesToInsert.map((line) => ({ ...line, scanId: scanDoc._id })),
         { ordered: true }
       );
+      stats.extractedLinesInserted = insertedDocs.length;
+      logger.info(`✅ Inserted ${insertedDocs.length} extracted_lines document(s)`);
 
       // Write Excel immediately after successful MongoDB insert
       if (logExcelLinesToExtract) {

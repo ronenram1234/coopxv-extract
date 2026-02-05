@@ -76,7 +76,7 @@ sync_all_environments() {
     print_status "All environments synced successfully"
 }
 
-# Function to run npm install at project root
+14# Function to run npm install at project root
 install_dependencies() {
     print_info "Installing dependencies at project root..."
     if command -v npm >/dev/null 2>&1; then

@@ -69,6 +69,8 @@ async function executeScan() {
     logger.info(`   🛑 Files with errors: ${stats.filesWithErrors}`);
     logger.info(`   📝 Field names found: ${stats.fieldNamesFound}`);
     logger.info(`   📊 Last rows (A=1): ${stats.lastRowsFound}`);
+    logger.info(`   🗄️ Scan document saved: ${Boolean(stats.scanSaved)}`);
+    logger.info(`   📥 Extracted lines inserted: ${stats.extractedLinesInserted || 0}`);
     if (stats.logFile) {
       logger.info(`   💾 Log file: ${stats.logFile}`);
     }
@@ -88,8 +90,15 @@ async function main() {
   try {
     await mongoose.connect(mongoUri, mongooseOptions);
     logger.info('✅ MongoDB connected successfully');
+    const connection = mongoose.connection;
+    const dbName = connection && connection.db ? connection.db.databaseName : 'unknown';
+    const readyState = connection ? connection.readyState : 'none';
+    logger.info(`📊 Connected DB name: ${dbName}`);
+    logger.info(`📊 Mongoose readyState: ${readyState}`);
   } catch (error) {
-    logger.error('❌ MongoDB connection failed:', error.stack || error.message || error);
+    const details =
+      (error && (error.stack || error.message)) || JSON.stringify(error, null, 2) || String(error);
+    logger.error(`❌ MongoDB connection failed: ${details}`);
     process.exit(1);
   }
 
