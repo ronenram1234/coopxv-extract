@@ -34,12 +34,12 @@ const { runScan } = require('./scripts/scan-and-log');
 const { cleanupOldScansAndLines } = require('./scripts/cleanup-old-scans');
 // [2026-02-03] winston-migration: Replace console.log with structured logging
 const logger = require('./config/logger');
-const { formatTimestampIsrael } = require('./config/logger');
+const { formatTimestampIsrael, attachMongoTransport } = require('./config/logger');
 
 const SEPARATOR = '='.repeat(70);
 // [2026-02-03] statistics-tracking: Track total scans for shutdown message
 let scanCount = 0;
-let intervalHandle = null;
+let scanLoopAborted = false;
 let cleanupIntervalHandle = null;
 let shuttingDown = false;
 
@@ -83,6 +83,34 @@ async function executeScan() {
   }
 }
 
+/** Wait up to ms, but exit early if shutdown requested. */
+function interruptibleDelay(ms) {
+  const chunk = 1000;
+  return new Promise((resolve) => {
+    let remaining = ms;
+    const tick = () => {
+      if (scanLoopAborted || remaining <= 0) {
+        resolve();
+        return;
+      }
+      const wait = Math.min(chunk, remaining);
+      remaining -= wait;
+      setTimeout(tick, wait);
+    };
+    tick();
+  });
+}
+
+/** Sequential scan loop: next scan starts only after previous finishes + interval. */
+async function runScanLoop() {
+  const intervalMs = scanInterval * 60 * 1000;
+  while (!scanLoopAborted) {
+    await executeScan();
+    if (scanLoopAborted) break;
+    await interruptibleDelay(intervalMs);
+  }
+}
+
 async function main() {
   logBanner();
 
@@ -95,6 +123,11 @@ async function main() {
     const readyState = connection ? connection.readyState : 'none';
     logger.info(`📊 Connected DB name: ${dbName}`);
     logger.info(`📊 Mongoose readyState: ${readyState}`);
+
+    // Attach MongoDB log transport so application/error logs are also written to the database
+    if (typeof attachMongoTransport === 'function') {
+      attachMongoTransport(connection);
+    }
   } catch (error) {
     const details =
       (error && (error.stack || error.message)) || JSON.stringify(error, null, 2) || String(error);
@@ -106,15 +139,12 @@ async function main() {
   // [2026-02-03] immediate-scan: Run first scan immediately on startup
   await executeScan();
 
-  const intervalMs = scanInterval * 60 * 1000;
-  intervalHandle = setInterval(() => {
-    executeScan().catch((err) => {
-      logger.error('❌ Interval scan failure:', err.stack || err.message || err);
-    });
-  }, intervalMs);
-
-  logger.info(`✅ Service is now running. Scanning every ${scanInterval} minute(s).`);
+  logger.info(`✅ Service is now running. Scanning sequentially every ${scanInterval} minute(s) after each scan.`);
   logger.info('Press Ctrl+C to stop.\n');
+
+  runScanLoop().catch((err) => {
+    logger.error('❌ Scan loop failure:', err.stack || err.message || err);
+  });
 
   // Daily cleanup: remove scans and extracted_lines older than LOG_RETENTION_DAYS
   function runCleanup() {
@@ -144,9 +174,7 @@ async function handleShutdown(signal) {
   shuttingDown = true;
 
   logger.warn(`\n⚠️  Shutdown signal received (${signal})`);
-  if (intervalHandle) {
-    clearInterval(intervalHandle);
-  }
+  scanLoopAborted = true;
   if (cleanupIntervalHandle) {
     clearInterval(cleanupIntervalHandle);
   }

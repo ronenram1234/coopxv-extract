@@ -112,6 +112,62 @@ const logger = winston.createLogger({
   transports: [applicationTransport, errorTransport, consoleTransport]
 });
 
+// Attach MongoDB transport at runtime (after Mongoose connects)
+let mongoTransportAttached = false;
+
+/**
+ * Attach a MongoDB Winston transport so logs are also written to the `log_entries` collection.
+ * Call this AFTER mongoose.connect, passing in mongoose.connection.
+ *
+ * @param {import('mongoose').Connection} mongooseConnection
+ */
+function attachMongoTransport(mongooseConnection) {
+  if (!mongooseConnection || !mongooseConnection.db) {
+    return;
+  }
+  if (mongoTransportAttached) {
+    return;
+  }
+
+  let MongoDB;
+  try {
+    // Dynamic require avoids loading the transport when not needed (e.g. during tests)
+    MongoDB = require('winston-mongodb').MongoDB;
+  } catch (error) {
+    // If the transport cannot be loaded, keep file/console logging working
+    logger.warn('⚠️  Failed to load winston-mongodb transport; DB logging disabled', {
+      error: error.message
+    });
+    return;
+  }
+
+  const ttlSeconds = Number.isFinite(logRetentionDays)
+    ? logRetentionDays * 24 * 60 * 60
+    : undefined;
+
+  try {
+    logger.add(
+      new MongoDB({
+        // Native MongoDB Db instance from mongoose connection
+        db: mongooseConnection.db,
+        collection: 'log_entries',
+        level: 'info', // info, warn, error → enough to see each run
+        expireAfterSeconds: ttlSeconds && ttlSeconds > 0 ? ttlSeconds : undefined,
+        // Store additional structured data under `meta` if provided
+        metaKey: 'meta'
+      })
+    );
+    mongoTransportAttached = true;
+    logger.info(
+      `ℹ️  MongoDB log transport attached (collection=log_entries, level=info, ttlDays=${logRetentionDays})`
+    );
+  } catch (error) {
+    logger.warn('⚠️  Failed to attach MongoDB log transport; DB logging disabled', {
+      error: error.message
+    });
+  }
+}
+
 /** Path for daily scan-results Excel file (Israel date). */
 function getScanResultsExcelPath() {
   const dateStr = formatDateIsrael(new Date()).replace(/\//g, '-');
@@ -123,3 +179,4 @@ module.exports.formatTimestampIsrael = formatTimestampIsrael;
 module.exports.formatDateIsrael = formatDateIsrael;
 module.exports.formatLocalTimeIsrael = formatLocalTimeIsrael;
 module.exports.getScanResultsExcelPath = getScanResultsExcelPath;
+module.exports.attachMongoTransport = attachMongoTransport;

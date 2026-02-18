@@ -1,0 +1,123 @@
+{
+  "project": {
+    "name": "CoopXV",
+    "type": "web-application",
+    "repository": "",
+    "description": "B2B poultry farm monitoring platform - real-time health reporting and early detection for chicken flocks"
+  },
+
+  "language": {
+    "primary": "hebrew",
+    "rtl": true,
+    "fallback": "english",
+    "ui_languages": ["hebrew", "english"],
+    "notes": "Hebrew is primary. ALL UI text must be verified in Hebrew first. RTL layout is mandatory."
+  },
+
+  "tech_stack": {
+    "backend": {
+      "framework": "Express 5",
+      "language": "JavaScript (Node.js)",
+      "database": "MongoDB (Mongoose)"
+    },
+    "frontend": {
+      "framework": "React 18",
+      "language": "TypeScript",
+      "styling": "SCSS + Bootstrap + MUI"
+    },
+    "infrastructure": {
+      "backend_hosting": "TBD",
+      "frontend_hosting": "TBD",
+      "ci_cd": "TBD"
+    }
+  },
+
+  "file_size_limits": {
+    "enabled": true,
+    "components": 200,
+    "hooks": 100,
+    "utils": 150,
+    "services": 200,
+    "controllers": 250,
+    "styles": 200,
+    "count_method": "executable_lines_only",
+    "note": "Excludes comments, headers, blank lines"
+  },
+
+  "modification_header": {
+    "format": "standard",
+    "required_fields": ["change_id", "date", "modified_by", "description", "file_size_check"],
+    "optional_fields": ["typography_compliance", "responsive_status", "language_verification"],
+    "note": "Header must always be at line 1 of modified files"
+  },
+
+  "design_system": {
+    "enabled": true,
+    "typography_tokens_required": true,
+    "color_variables_required": true,
+    "responsive_required": true,
+    "maya_approval_required": true,
+    "location": "client/src/styles/",
+    "variables_path": "client/src/styles/variables/",
+    "mixins_path": "client/src/styles/mixins/"
+  },
+
+  "permissions": {
+    "git_commands": {
+      "allowed_agents": ["michael"],
+      "requires_approval": true,
+      "approval_from": "ronen"
+    },
+    "build_commands": {
+      "allowed_agents": ["michael"],
+      "requires_approval": true,
+      "approval_from": "ronen"
+    },
+    "production_deployment": {
+      "allowed_agents": ["michael"],
+      "requires_approval": true,
+      "approval_from": "ronen"
+    }
+  },
+
+  "workflows": {
+    "auto_savepoint": true,
+    "savepoint_format": "session-YYYYMMDD-HHMM",
+    "savepoint_location": "docs/output/save-points/",
+    "development_modes": ["planning", "implementation", "testing", "debugging"]
+  },
+
+  "cost_optimization": {
+    "enabled": true,
+    "target_savings": "15-20%",
+    "strategy": "smaller_files_lower_cost",
+    "file_splitting_threshold": 0.8
+  },
+
+  "session_protocol": {
+    "check_external_docs": true,
+    "external_docs_path": "C:\\Users\\UAVZone\\OneDrive\\0projects\\לקוחות_עבודות\\CoopXV",
+    "note": "At session start, browse the external docs folder for new files added since last session"
+  },
+
+  "folder_structure": {
+    "input": {
+      "requirements": "docs/input/requirements/",
+      "design": "docs/input/design/",
+      "reference": "docs/input/reference/"
+    },
+    "output": {
+      "requirements": "docs/output/requirements/",
+      "architecture": "docs/output/architecture/",
+      "planning": "docs/output/planning/",
+      "presentations": "docs/output/presentations/",
+      "operations": "docs/output/operations/",
+      "save_points": "docs/output/save-points/"
+    },
+    "shared": {
+      "decisions": "docs/shared/decisions/",
+      "meeting_notes": "docs/shared/meeting-notes/",
+      "changelog": "docs/shared/changelog/"
+    }
+  }
+}

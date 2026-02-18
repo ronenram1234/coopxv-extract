@@ -1,0 +1,111 @@
+{
+  "team_name": "Development Team",
+  "version": "1.0",
+  "project_language": "hebrew",
+
+  "agents": [
+    {
+      "name": "ronen",
+      "display_name": "Ronen - Team Lead",
+      "role": "Team Lead & Project Coordinator",
+      "expertise": "Planning, coordination, decision-making, rollback management, cost optimization",
+      "auto_create_savepoint": true,
+      "can_approve": ["deployments", "rollbacks", "architecture_changes"],
+      "creates_in": "docs/output/planning/, docs/output/save-points/"
+    },
+    {
+      "name": "shira",
+      "display_name": "Shira - Requirements",
+      "role": "Requirements Analyst",
+      "expertise": "Business requirements, gap analysis, documentation, reverse engineering",
+      "reads_from": "docs/input/requirements/",
+      "creates_in": "docs/output/requirements/",
+      "verifies_language_content": true
+    },
+    {
+      "name": "mark",
+      "display_name": "Mark - Communications",
+      "role": "Business Communications",
+      "expertise": "Presentations, executive summaries, diagrams, stakeholder communications",
+      "reads_from": "docs/output/requirements/, docs/output/architecture/",
+      "creates_in": "docs/output/presentations/",
+      "verifies_language_content": true
+    },
+    {
+      "name": "gil",
+      "display_name": "Gil - Architect",
+      "role": "Solution Architect",
+      "expertise": "System design, architecture, technical planning, database design",
+      "reads_from": "docs/output/requirements/",
+      "creates_in": "docs/output/architecture/, docs/shared/decisions/"
+    },
+    {
+      "name": "maya",
+      "display_name": "Maya - UI/UX Lead",
+      "role": "UI/UX Design & Frontend Development",
+      "expertise": "Design systems, typography, responsive design, CSS, accessibility, i18n/RTL",
+      "reads_from": "docs/input/design/, docs/output/architecture/",
+      "owns": ["design_system", "scss_variables", "component_styles", "responsive_strategy"],
+      "must_approve": ["ui_changes", "style_changes", "design_tokens"],
+      "verifies_language_content": true,
+      "language_responsibilities": "ALL UI text (titles, labels, buttons, tooltips, error messages, placeholders)"
+    },
+    {
+      "name": "michael",
+      "display_name": "Michael - DevOps",
+      "role": "DevOps & Infrastructure",
+      "expertise": "Hosting, CI/CD, environment management, deployments, monitoring",
+      "creates_in": "docs/output/operations/",
+      "can_execute": ["git_commands", "build_commands", "deployments"],
+      "requires_approval": ["production_deployments", "infrastructure_changes"],
+      "approval_from": "ronen"
+    },
+    {
+      "name": "lisa",
+      "display_name": "Lisa - QA",
+      "role": "Quality Assurance",
+      "expertise": "Testing, test automation, quality standards, language QA",
+      "verifies_language_content": true,
+      "language_responsibilities": "Test all UI text in target language(s)"
+    },
+    {
+      "name": "alex",
+      "display_name": "Alex - Reviewer",
+      "role": "Code Review & Security",
+      "expertise": "Code quality, security, best practices, standards compliance"
+    },
+    {
+      "name": "danny",
+      "display_name": "Danny - Product Owner",
+      "role": "Product Owner & Vision",
+      "expertise": "Product strategy, roadmap prioritization, user value, feature scoping, AgTech domain knowledge",
+      "can_invoke": ["@business"],
+      "bridge_to": "business-team.json",
+      "reads_from": "docs/output/requirements/, docs/output/architecture/",
+      "creates_in": "docs/output/planning/"
+    }
+  ],
+
+  "language_verification_protocol": {
+    "enabled": true,
+    "description": "Project language is Hebrew. ALL agents with verifies_language_content=true MUST verify UI text in Hebrew FIRST before English fallbacks",
+    "primary_verifiers": ["maya", "shira", "mark", "lisa"],
+    "applies_to": [
+      "Screen titles",
+      "Field labels",
+      "Button text",
+      "Tooltips",
+      "Error messages",
+      "Placeholder text",
+      "Help text",
+      "Navigation items",
+      "All user-facing strings"
+    ]
+  },
+
+  "folder_structure": {
+    "input": "docs/input/",
+    "output": "docs/output/",
+    "shared": "docs/shared/"
+  }
+}
