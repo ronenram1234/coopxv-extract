@@ -355,7 +355,9 @@ async function runScan() {
 
   if (dbReady) {
     try {
-      scanNumber = (await Scan.countDocuments()) + 1;
+      // [2026-02-18] scan-number: Use max scanNumber instead of countDocuments to avoid gaps/duplicates
+      const lastScan = await Scan.findOne().sort({ scanNumber: -1 }).select('scanNumber').lean();
+      scanNumber = (lastScan?.scanNumber || 0) + 1;
     } catch (error) {
       logger.warn(`⚠️  Failed to compute scanNumber: ${error.message}`);
     }
@@ -435,6 +437,9 @@ async function runScan() {
     let rowsExtractedForFile = 0;
 
     for (const sheetName of sheetNames) {
+      // [2026-02-18] sheet-filter: Only extract from BData_in sheet (case-insensitive)
+      if (sheetName.toLowerCase() !== 'bdata_in') continue;
+
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 

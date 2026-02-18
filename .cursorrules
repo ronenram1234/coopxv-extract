@@ -1,98 +1,77 @@
 # ============================================================================
-# CoopXV-Extract Project Rules for Cursor AI
-# Version: 1.0
-# Last Updated: 2026-01-28
+# CoopXV-Extract Project Rules for AI Assistants
+# Version: 2.0
+# Last Updated: 2026-02-18
 # ============================================================================
 
 # PROJECT TYPE
-# Node.js TypeScript standalone Windows service
-# Packages as single executable with embedded Node.js runtime
+# Node.js plain JavaScript (CommonJS) standalone Windows service
+# Packages as single executable with embedded Node.js runtime via pkg
 
 # ============================================================================
-# MANDATORY FOLDER STRUCTURE (LOCKED - DO NOT MODIFY)
+# FOLDER STRUCTURE (LOCKED - DO NOT MODIFY)
 # ============================================================================
 
 ## Root Level
 # ONLY these folders allowed at root:
-# - src/
-# - config/
-# - tests/
-# - scripts/
-# - logs/ (auto-created)
-# - dist/ (auto-created)
-# - release/ (auto-created)
+# - config/       (configuration & logger)
+# - models/       (Mongoose schemas)
+# - scripts/      (scanner, cleanup, setup, utilities)
+# - logs/         (auto-created at runtime)
+# - dist/         (auto-created, pkg output + WinSW)
+# - node_modules/ (auto-created)
 
-## Source Structure (src/)
-# ENFORCED STRUCTURE:
-src/
-├── index.ts                    # Main entry point ONLY
-├── config/                     # Configuration files only
-│   ├── config.ts
-│   └── constants.ts
-├── services/                   # Business logic services
-│   ├── file-watcher.service.ts
-│   ├── excel-reader.service.ts
-│   ├── mongo.service.ts
-│   ├── logger.service.ts
-│   ├── queue.service.ts
-│   └── cleanup.service.ts
-├── models/                     # Mongoose schemas only
-│   ├── row-data.model.ts
-│   └── process-log.model.ts
-├── utils/                      # Pure utility functions
-│   ├── file-lock-handler.ts
-│   ├── row-tracker.ts
-│   └── error-handler.ts
-├── types/                      # TypeScript type definitions
-│   └── index.ts
-├── install-service.ts          # Windows service installer
-└── uninstall-service.ts        # Windows service uninstaller
+## Actual Structure
+config/
+  database.js        # Loads .env, validates MongoDB URI, exports config values
+  logger.js          # Winston logger: daily file rotation + console + MongoDB transport
+
+models/
+  Scan.js            # Scan metadata schema (statistics, filesProcessed[], duration)
+  ExtractedLine.js   # Extracted row schema (data{}, display{}, metadata{})
+
+scripts/
+  scan-and-log.js    # Core scanner: walkSync, pattern matching, Excel reading, dedup, DB insert
+  cleanup-old-scans.js  # Deletes scans + extracted_lines older than LOG_RETENTION_DAYS
+  setup-env.js       # Interactive .env setup wizard
+  test-connection.js # Standalone MongoDB connection test
+
+index.js             # Entry point: MongoDB connect, scan loop, graceful shutdown
 
 # ============================================================================
 # NAMING CONVENTIONS (MANDATORY)
 # ============================================================================
 
 ## Files and Folders
-- Folders: kebab-case (e.g., file-watcher/)
-- TypeScript files: kebab-case.ts (e.g., excel-reader.service.ts)
-- Config files: kebab-case or dot-files (e.g., .env, default.env)
-- Batch scripts: lowercase.bat (e.g., install.bat)
+- Folders: kebab-case (e.g., config/)
+- JavaScript files: kebab-case.js or PascalCase.js for models (e.g., scan-and-log.js, Scan.js)
+- Config files: kebab-case or dot-files (e.g., .env, database.js)
 
 ## Code Elements
-- Classes: PascalCase (e.g., FileWatcherService)
-- Interfaces: PascalCase with "I" prefix (e.g., IRowData)
-- Functions: camelCase (e.g., readLastRow)
-- Methods: camelCase (e.g., connectWithRetry)
+- Classes: PascalCase (e.g., Scan, ExtractedLine)
+- Functions: camelCase (e.g., runScan, walkSync)
 - Constants: SCREAMING_SNAKE_CASE (e.g., MAX_RETRY_COUNT)
-- Variables: camelCase (e.g., fileWatcher)
-- Enums: PascalCase (e.g., LogLevel)
+- Variables: camelCase (e.g., filePattern, scanNumber)
 
-## Service Files
-- Pattern: [name].service.ts
-- Export: Single class or singleton instance
-- Example: file-watcher.service.ts exports class FileWatcherService
-
-## Model Files
-- Pattern: [entity].model.ts
-- Export: Mongoose model and interface
-- Example: row-data.model.ts exports IRowData interface and RowData model
+## Module Pattern
+- Use `require()` and `module.exports` (CommonJS)
+- Do NOT use `import` / `export` (ES modules)
+- Group requires: external libraries first, then internal modules
 
 # ============================================================================
 # FILE SIZE LIMITS (CRITICAL)
 # ============================================================================
 
 ## Maximum Line Counts (executable code only)
-- Services (*.service.ts): 200 lines
-- Models (*.model.ts): 150 lines
-- Utils (*.ts in utils/): 150 lines
-- Config files: 100 lines
-- Type definitions: 100 lines
-- Main index.ts: 150 lines
+- Scripts (scripts/*.js): 250 lines
+- Models (models/*.js): 150 lines
+- Config files (config/*.js): 100 lines
+- Main index.js: 150 lines
 
 ## Counting Rules
 - Count ONLY executable code
 - Exclude: headers, comments, blank lines
-- Include: imports, type definitions, function bodies
+- Include: require statements, function bodies
 
 ## Enforcement
 - BEFORE modifying ANY file: Check current line count
@@ -111,7 +90,7 @@ src/
  * File: [filename]
  * Created: [YYYY-MM-DD]
  * Modified: [YYYY-MM-DD]
- * Modified By: Cursor AI
+ * Modified By: [tool name]
  *
  * Description:
  * [Clear explanation of file purpose and recent changes]
@@ -124,58 +103,28 @@ src/
  * - Decision: [Proceed | Split First]
  *
  * Dependencies:
- * - [List imported modules and services]
+ * - [List required modules]
  */
 
 ## Header Placement
-- Must be at line 1 (after shebang if present)
+- Must be at line 1
 - Never delete old headers - stack newest modifications on top
 - Update "Modified" date and description on each change
-
-# ============================================================================
-# INLINE COMMENTS (MANDATORY FOR SIGNIFICANT CHANGES)
-# ============================================================================
-
-## Format
-// [YYYY-MM-DD] [topic]: [reason]
-
-## Examples
-// [2026-01-28] retry-logic: Infinite retry on MongoDB connection failure per spec
-// [2026-01-28] excel-reading: Read last row only for memory efficiency (8.1.B)
-// [2026-01-28] column-names: Preserve Excel letter format (A,B,C...) per Q5
-
-## When to Add
-- Business logic implementations
-- Error handling decisions
-- Performance optimizations
-- Spec compliance points
 
 # ============================================================================
 # CODE QUALITY RULES
 # ============================================================================
 
-## TypeScript Strict Mode
-- All code MUST pass strict TypeScript checks
-- No "any" types without explicit comment explaining why
-- All function parameters must be typed
-- All return types must be explicit
-
 ## Error Handling
 - All async operations must have try-catch
-- Log all errors using logger service (never console.log)
+- Log all errors using logger (never console.log in production code)
 - MongoDB connection failures: Infinite retry with logging
 - File lock errors: Retry with exponential backoff (max 5 attempts)
 
-## Imports
-- Group imports: external libraries first, then internal modules
-- Use absolute imports from 'src/' when possible
-- Sort alphabetically within groups
-
 ## Environment Variables
-- ALL configuration from environment variables
+- ALL configuration from environment variables via config/database.js
 - NO hardcoded values (paths, URLs, credentials, timeouts)
-- Use config service to access environment variables
-- Provide defaults in config/default.env
+- Provide defaults in config/database.js where appropriate
 
 # ============================================================================
 # MONGODB RULES
@@ -183,7 +132,6 @@ src/
 
 ## Schema Design
 - Use Mongoose schemas for all collections
-- Define interfaces for all models (IRowData, IProcessLog)
 - Include timestamps: { timestamps: true }
 - Add indexes for frequently queried fields
 
@@ -191,7 +139,7 @@ src/
 - Store ALL Excel columns as key-value pairs
 - Use Excel column letters as keys (A, B, C, D...)
 - Do NOT skip columns or apply mapping logic here
-- Mapping logic belongs in consuming services, not extraction
+- Both raw values (data{}) and formatted display values (display{}) stored per row
 
 ## Connection Handling
 - Implement infinite retry on connection failure
@@ -204,15 +152,20 @@ src/
 # ============================================================================
 
 ## File Detection
-- Pattern: cxv*.xlsx (case-sensitive, lowercase only)
-- Scan recursively from C:\CoopXV
-- Use Chokidar for file watching (not polling)
+- Pattern: *.xlsx (configurable via FILE_PATTERN env var)
+- Scan recursively from ROOT_DIRECTORY
+- Use walkSync for file discovery (not file watching)
+
+## Sheet Filter (CRITICAL)
+- ONLY extract data from the sheet named "BData_in" (case-insensitive)
+- Skip all other sheets entirely
+- This prevents extracting data from summary/metadata/other sheets
 
 ## Reading Strategy
-- Read ONLY the last row (memory efficiency)
-- Check Column A value: 1 = process, 2 = error alert
-- Store timestamp of file modification
-- Track last processed values to detect new data
+- Read rows where Column A = 1 (candidate rows for extraction)
+- Compare against last stored row to detect new/changed data
+- Store timestamp of scan
+- Track last processed values to avoid duplicate inserts
 
 ## File Locking
 - Retry locked files up to 5 times
@@ -225,13 +178,13 @@ src/
 # ============================================================================
 
 ## Logger Service
-- Use Winston for all logging (NO console.log)
+- Use Winston for all logging (NO console.log in production code)
 - Log to BOTH file and MongoDB (when connected)
-- Daily rotation with 30-day retention
+- Daily rotation with configurable retention (LOG_RETENTION_DAYS)
 - Levels: error, warn, info (default), debug
 
 ## Log Format
-- Timestamp (ISO 8601)
+- Timestamp (ISO 8601, Israel timezone)
 - Level
 - Message
 - Context object (operation, fileName, error, duration)
@@ -242,195 +195,60 @@ src/
 - ERROR: Connection failures, processing errors, unhandled exceptions
 
 # ============================================================================
-# SERVICE ARCHITECTURE RULES
-# ============================================================================
-
-## Service Pattern
-- Each service is a singleton class
-- Export instance: export default new ServiceName()
-- Services communicate through dependency injection
-- No circular dependencies allowed
-
-## Service Responsibilities
-- file-watcher: Monitor directories, detect file changes
-- excel-reader: Read Excel files, extract last row
-- mongo: Handle all MongoDB operations and connection retry
-- logger: Centralized logging to file and database
-- queue: Process files sequentially using Bull
-- cleanup: Daily cron job for log cleanup
-
-## Initialization Order
-1. Load configuration
-2. Initialize logger
-3. Connect to MongoDB (with infinite retry)
-4. Start queue service
-5. Start file watcher
-6. Schedule cleanup service
-
-# ============================================================================
-# TESTING RULES
-# ============================================================================
-
-## Test Structure
-tests/
-├── [service-name].test.ts    # Unit tests
-└── fixtures/
-    └── sample-files/          # Sample Excel files
-
-## Test Requirements
-- Use Jest framework
-- Mock external dependencies (MongoDB, file system)
-- Test error handling paths
-- Test retry logic
-- Minimum 80% code coverage for services
-
-# ============================================================================
 # WINDOWS SERVICE RULES
 # ============================================================================
 
-## Service Installation
-- Use node-windows package
+## Service Management
+- Uses WinSW (Windows Service Wrapper) for service installation
 - Service name: CoopXVExtract
-- Auto-start: Yes (Q1 confirmed)
-- Run as: Local System account
-
-## Installation Scripts
-- install.bat: Check admin, create config, install service
-- uninstall.bat: Stop service, uninstall, preserve logs
-
-# ============================================================================
-# PACKAGING RULES
-# ============================================================================
-
-## PKG Configuration
-- Target: node18-win-x64
-- Single executable output
-- Embed Node.js runtime (no external dependencies)
-- Include config templates in assets
-
-## Distribution Package
-- coopxv-extract.exe (main executable)
-- config/default.env (template)
-- install.bat (installer script)
-- uninstall.bat (uninstaller script)
-- README.txt (instructions)
+- Auto-start: Yes
+- Packaged via pkg as single executable (dist/coopxv-extract.exe)
 
 # ============================================================================
 # FORBIDDEN ACTIONS
 # ============================================================================
 
 ## NEVER Do These
-- ❌ Create new top-level folders
-- ❌ Use console.log (use logger service)
-- ❌ Hardcode configuration values
-- ❌ Ignore file size limits
-- ❌ Skip modification headers
-- ❌ Use "any" type without comment
-- ❌ Add code above modification headers
-- ❌ Create files outside defined structure
-- ❌ Use require() (use ES6 import/export)
-- ❌ Implement UI components (no UI this phase)
+- Create new top-level folders beyond the defined structure
+- Use console.log in production code (use logger)
+- Hardcode configuration values
+- Ignore file size limits
+- Skip modification headers
+- Use ES module syntax (import/export) - use require()/module.exports
+- Implement UI components (no UI this phase)
+- Extract data from sheets other than BData_in
 
 # ============================================================================
 # ALWAYS Do These
 # ============================================================================
 
-## ✅ Mandatory Actions
-- ✅ Check file size before modification
-- ✅ Add modification header to new files
-- ✅ Update modification header on changes
-- ✅ Use TypeScript strict mode
-- ✅ Log all significant operations
-- ✅ Handle all errors with try-catch
-- ✅ Document business logic decisions
-- ✅ Follow naming conventions exactly
-- ✅ Use environment variables for config
-- ✅ Test error handling paths
-
-# ============================================================================
-# COST OPTIMIZATION
-# ============================================================================
-
-## Why These Rules Matter
-- Smaller files = lower token costs
-- Clear structure = fewer refactoring iterations
-- Strict typing = fewer debugging sessions
-- Good logging = faster issue resolution
-- Target: 15-20% reduction in AI assistance costs
-
-# ============================================================================
-# WHEN IN DOUBT
-# ============================================================================
-
-## Decision Framework
-1. Does this follow the folder structure? → If no, stop
-2. Does this exceed file size limits? → If yes, split first
-3. Is configuration hardcoded? → If yes, use environment variables
-4. Is there proper error handling? → If no, add try-catch
-5. Are business rules documented? → If no, add comments
-6. Will this need UI components? → If yes, defer to future phase
-
-## Ask User When
-- Unclear business requirements
-- Multiple valid implementation approaches
-- Need to modify folder structure
-- Need to add new dependencies
-- Uncertain about error handling strategy
+## Mandatory Actions
+- Check file size before modification
+- Add modification header to new files
+- Update modification header on changes
+- Log all significant operations
+- Handle all errors with try-catch
+- Document business logic decisions with inline comments
+- Follow naming conventions exactly
+- Use environment variables for config
 
 # ============================================================================
 # PROJECT-SPECIFIC TECHNICAL DECISIONS
 # ============================================================================
 
 ## Confirmed Specifications
-- File pattern: cxv*.xlsx (case-sensitive)
-- Root path: C:\CoopXV
-- Scan interval: 5 minutes
-- File lock retry: 5 attempts with exponential backoff
-- MongoDB retry: Infinite with 5-second interval
+- File pattern: *.xlsx (configurable via FILE_PATTERN)
+- Sheet filter: BData_in only (case-insensitive)
+- Root path: Configurable via ROOT_DIRECTORY
+- Scan interval: 5 minutes (configurable via SCAN_INTERVAL_MINUTES)
+- MongoDB retry: Infinite with exponential backoff
 - Column format: Excel letters (A, B, C...)
-- Status column: A (1=process, 2=error)
-- Cleanup: Daily at 2 AM, 30-day retention
-- Log rotation: Daily, 30-day retention
+- Status column: A (1 = extract this row)
+- Cleanup: Daily, configurable retention via LOG_RETENTION_DAYS
+- Log rotation: Daily, same retention
 - Service auto-start: Yes
+- Timezone: Asia/Jerusalem for all timestamps
 - UI interface: None (Phase 1)
-
-# ============================================================================
-# VERSION CONTROL
-# ============================================================================
-
-## Git Ignored Items (in .gitignore)
-- node_modules/
-- dist/
-- release/
-- logs/
-- .env
-- *.log
-
-## Tracked Items
-- src/ (all source code)
-- config/ (templates only)
-- tests/ (all test files)
-- scripts/ (installation scripts)
-- package.json
-- tsconfig.json
-- .cursorrules (this file)
-- README.md
-
-# ============================================================================
-# COMPLIANCE VERIFICATION
-# ============================================================================
-
-## Before Committing Any Code, Verify
-- [ ] Folder structure matches specification
-- [ ] File naming follows conventions
-- [ ] File sizes under limits
-- [ ] Modification headers present
-- [ ] TypeScript strict mode passes
-- [ ] No console.log statements
-- [ ] No hardcoded configuration
-- [ ] Error handling implemented
-- [ ] Business logic documented
-- [ ] Tests written (when applicable)
 
 # ============================================================================
 # END OF CURSORRULES

@@ -15,12 +15,13 @@ node_modules/
 # ===================================
 # ENVIRONMENT VARIABLES
 # ===================================
-#.env
-#.env.local
-#.env.development.local
-#.env.test.local
-#.env.production.local
-#.env*.local
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+dist/.env
 
 # ===================================
 # BUILD OUTPUTS
@@ -112,6 +113,7 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+_tmp_*
 
 # Temporary extraction folders
 *-extract-*/
