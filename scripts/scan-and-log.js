@@ -42,6 +42,7 @@ const {
 } = require('../config/logger');
 const Scan = require('../models/Scan');
 const ExtractedLine = require('../models/ExtractedLine');
+const FlockStatus = require('../models/FlockStatus');
 
 /** Convert glob pattern (e.g. *.xlsx) to a RegExp for matching basenames. */
 function patternToRegex(glob) {
@@ -97,6 +98,13 @@ function isColumnAOne(value) {
   if (value === 1) return true;
   if (typeof value === 'string' && value.trim() === '1') return true;
   return value === '1';
+}
+
+/** Check if value in column A equals 11 (numeric or string — maintenance flag). */
+function isColumnAEleven(value) {
+  if (value === 11) return true;
+  if (typeof value === 'string' && value.trim() === '11') return true;
+  return value === '11';
 }
 
 /** Timestamp in Israel timezone for scan/Excel. */
@@ -403,6 +411,7 @@ async function runScan() {
   let lastRowCount = 0;
   const filesProcessed = [];
   const extractedLinesToInsert = [];
+  const flockStatusUpdates = [];
   const totalFiles = matchingFiles.length;
   let successfulFiles = 0;
   let errorFiles = 0;
@@ -435,10 +444,16 @@ async function runScan() {
     const sheetNames = workbook.SheetNames || [];
     logger.info(`   📊 Found ${sheetNames.length} sheet(s)`);
     let rowsExtractedForFile = 0;
+    let fileActiveRowCount = 0;
+    let fileMaintenanceRowCount = 0;
+    let fileHasBDataIn = false;
+    let bdataInSheetName = '';
 
     for (const sheetName of sheetNames) {
       // [2026-02-18] sheet-filter: Only extract from BData_in sheet (case-insensitive)
       if (sheetName.toLowerCase() !== 'bdata_in') continue;
+      fileHasBDataIn = true;
+      bdataInSheetName = sheetName;
 
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
@@ -456,6 +471,7 @@ async function runScan() {
       }
 
       const candidates = [];
+      let maintenanceCount = 0;
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
         const row = rows[rowIndex];
         const colA = Array.isArray(row) ? row[0] : undefined;
@@ -464,8 +480,12 @@ async function runScan() {
             rowNumber: rowIndex + 1,
             rowArray: row
           });
+        } else if (isColumnAEleven(colA)) {
+          maintenanceCount++;
         }
       }
+      fileActiveRowCount = candidates.length;
+      fileMaintenanceRowCount = maintenanceCount;
 
       if (candidates.length > 0) {
         candidates.sort((a, b) => a.rowNumber - b.rowNumber);
@@ -557,6 +577,29 @@ async function runScan() {
       }
     }
 
+    // Build flock status entry for files with BData_in sheet
+    if (fileHasBDataIn) {
+      let flockStatus;
+      if (fileActiveRowCount > 0) {
+        flockStatus = 'active';
+      } else if (fileMaintenanceRowCount > 0) {
+        flockStatus = 'maintenance';
+      } else {
+        flockStatus = 'closed';
+      }
+      flockStatusUpdates.push({
+        filename,
+        filePath,
+        folder,
+        sheetName: bdataInSheetName,
+        flockStatus,
+        lastColumnAValue: fileActiveRowCount > 0 ? '1' : (fileMaintenanceRowCount > 0 ? '11' : null),
+        hasActiveRows: fileActiveRowCount > 0,
+        hasMaintenanceRows: fileMaintenanceRowCount > 0,
+        activeRowCount: fileActiveRowCount
+      });
+    }
+
     filesProcessed.push({
       folder,
       filename,
@@ -636,6 +679,68 @@ async function runScan() {
       }
     } catch (error) {
       logger.error('❌ Failed to write extracted_lines documents:', {
+        error: error.message,
+        stack: error.stack
+      });
+    }
+  }
+
+  // Upsert flock_status documents
+  if (flockStatusUpdates.length > 0) {
+    try {
+      // Fetch existing statuses to detect changes for statusChangedAt
+      const existingStatuses = await FlockStatus.find({
+        filename: { $in: flockStatusUpdates.map((u) => u.filename) }
+      }).lean();
+      const statusMap = {};
+      for (const doc of existingStatuses) {
+        statusMap[doc.filename] = doc.flockStatus;
+      }
+
+      const bulkOps = flockStatusUpdates.map((update) => {
+        const previousStatus = statusMap[update.filename];
+        const statusChanged = previousStatus != null && previousStatus !== update.flockStatus;
+        const isNew = previousStatus == null;
+
+        const setFields = {
+          filename: update.filename,
+          filePath: update.filePath,
+          folder: update.folder,
+          sheetName: update.sheetName,
+          flockStatus: update.flockStatus,
+          lastColumnAValue: update.lastColumnAValue,
+          hasActiveRows: update.hasActiveRows,
+          hasMaintenanceRows: update.hasMaintenanceRows,
+          activeRowCount: update.activeRowCount,
+          lastScanNumber: scanNumber,
+          lastScanAt: scanStartedAt
+        };
+
+        if (update.hasActiveRows) {
+          setFields.lastActiveAt = scanStartedAt;
+        }
+        if (update.hasMaintenanceRows) {
+          setFields.lastMaintenanceAt = scanStartedAt;
+        }
+        if (statusChanged || isNew) {
+          setFields.statusChangedAt = scanStartedAt;
+        }
+
+        return {
+          updateOne: {
+            filter: { filename: update.filename },
+            update: { $set: setFields },
+            upsert: true
+          }
+        };
+      });
+
+      const result = await FlockStatus.bulkWrite(bulkOps);
+      logger.info(
+        `✅ Flock status upserted: ${result.upsertedCount} new, ${result.modifiedCount} updated`
+      );
+    } catch (error) {
+      logger.error('❌ Failed to upsert flock_status documents:', {
         error: error.message,
         stack: error.stack
       });
