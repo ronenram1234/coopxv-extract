@@ -57,7 +57,7 @@ const scanInterval = getNumber('SCAN_INTERVAL_MINUTES', 5);
 const rootDirectory = getString('ROOT_DIRECTORY', 'C:\\CoopXV');
 const filePattern = getString('FILE_PATTERN', 'cxv*.xlsx');
 const logDirectory = getString('LOG_DIRECTORY', path.join(process.cwd(), 'logs'));
-const logRetentionDays = getNumber('LOG_RETENTION_DAYS', 30);
+const logRetentionDays = 3; // hardcoded — 3-day retention for log_entries + extracted_lines
 // When true, write extracted lines (header + last row per sheet) to daily Excel file scan-results-YYYY-MM-DD.xlsx
 const logExcelLinesToExtract =
   getString('LOG_EXCEL_LINES_TO_EXTRACT', 'false').toLowerCase() === 'true';

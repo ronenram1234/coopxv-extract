@@ -47,7 +47,7 @@ ROOT_DIRECTORY=C:\\\\CoopXV
 FILE_PATTERN=cxv*.xlsx
 
 # Logging
-LOG_RETENTION_DAYS=30
+# LOG_RETENTION_DAYS is hardcoded to 3 in config/database.js
 `;
 
 const SEPARATOR = '='.repeat(50);
