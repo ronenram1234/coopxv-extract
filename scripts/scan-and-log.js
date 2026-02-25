@@ -458,6 +458,8 @@ async function runScan() {
       const sheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
+      // Build displayColumnNames mapping (column letter -> Hebrew header name)
+      const displayColumnNames = {};
       if (rows.length > 0) {
         const headerRow = rows[0];
         const fieldNames = [];
@@ -466,6 +468,7 @@ async function runScan() {
           if (fieldName !== '') {
             fieldNames.push(fieldName);
             fieldNameCount += 1;
+            displayColumnNames[indexToColumnLetter(col)] = fieldName;
           }
         }
       }
@@ -567,6 +570,7 @@ async function runScan() {
             rowNumber: next.rowNumber,
             data,
             display,
+            displayColumnNames,
             metadata
           });
         } else {

@@ -23,6 +23,7 @@ const extractedLineSchema = new Schema(
     rowNumber: { type: Number, required: true, min: 1 },
     data: { type: Schema.Types.Mixed, required: true, default: {} },
     display: { type: Schema.Types.Mixed, required: false, default: {} },
+    displayColumnNames: { type: Schema.Types.Mixed, required: false, default: {} },
     metadata: { type: metadataSchema, required: true }
   },
   {
