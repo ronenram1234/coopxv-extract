@@ -124,6 +124,17 @@ async function main() {
     logger.info(`📊 Connected DB name: ${dbName}`);
     logger.info(`📊 Mongoose readyState: ${readyState}`);
 
+    // Monitor MongoDB connection health
+    connection.on('error', (err) => {
+      logger.error(`⚠️ MongoDB connection error: ${err.message}`);
+    });
+    connection.on('disconnected', () => {
+      logger.warn('⚠️ MongoDB disconnected — scans will retry on next cycle');
+    });
+    connection.on('reconnected', () => {
+      logger.info('✅ MongoDB reconnected');
+    });
+
     // Attach MongoDB log transport so application/error logs are also written to the database
     if (typeof attachMongoTransport === 'function') {
       attachMongoTransport(connection);
@@ -164,6 +175,16 @@ function registerShutdownHandlers() {
     process.on(signal, () => {
       handleShutdown(signal);
     });
+  });
+
+  // Global safety nets — prevent any uncaught error from crashing the service
+  process.on('uncaughtException', (err) => {
+    logger.error(`🛡️ Uncaught exception (service continues): ${err.message}`, { stack: err.stack });
+  });
+  process.on('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    const stack = reason instanceof Error ? reason.stack : undefined;
+    logger.error(`🛡️ Unhandled rejection (service continues): ${msg}`, { stack });
   });
 }
 

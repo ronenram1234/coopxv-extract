@@ -146,17 +146,27 @@ function attachMongoTransport(mongooseConnection) {
     : undefined;
 
   try {
-    logger.add(
-      new MongoDB({
-        // Native MongoDB Db instance from mongoose connection
-        db: mongooseConnection.db,
-        collection: 'log_entries',
-        level: 'info', // info, warn, error → enough to see each run
-        expireAfterSeconds: ttlSeconds && ttlSeconds > 0 ? ttlSeconds : undefined,
-        // Store additional structured data under `meta` if provided
-        metaKey: 'meta'
-      })
-    );
+    const mongoTransport = new MongoDB({
+      // Native MongoDB Db instance from mongoose connection
+      db: mongooseConnection.db,
+      collection: 'log_entries',
+      level: 'info', // info, warn, error → enough to see each run
+      expireAfterSeconds: ttlSeconds && ttlSeconds > 0 ? ttlSeconds : undefined,
+      // Store additional structured data under `meta` if provided
+      metaKey: 'meta'
+    });
+
+    // Prevent winston-mongodb connection errors from crashing the process
+    mongoTransport.on('error', (err) => {
+      if (!mongoTransport._errorLogged) {
+        mongoTransport._errorLogged = true;
+        console.error(`[winston-mongodb] Transport error (further errors suppressed): ${err.message}`);
+        // Reset flag after 5 minutes so we log again if the problem persists
+        setTimeout(() => { mongoTransport._errorLogged = false; }, 5 * 60 * 1000);
+      }
+    });
+
+    logger.add(mongoTransport);
     mongoTransportAttached = true;
     logger.info(
       `ℹ️  MongoDB log transport attached (collection=log_entries, level=info, ttlDays=${logRetentionDays})`

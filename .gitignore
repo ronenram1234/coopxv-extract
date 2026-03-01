@@ -24,9 +24,10 @@ node_modules/
 dist/.env
 
 # ===================================
-# BUILD OUTPUTS
+# BUILD OUTPUTS / BINARIES
 # ===================================
 build/
+dist/*.exe
 
 coverage/
 client/build/
