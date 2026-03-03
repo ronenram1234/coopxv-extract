@@ -114,6 +114,8 @@ const logger = winston.createLogger({
 
 // Attach MongoDB transport at runtime (after Mongoose connects)
 let mongoTransportAttached = false;
+let currentMongoTransport = null;
+let reconnectionListenersAttached = false;
 
 /**
  * Attach a MongoDB Winston transport so logs are also written to the `log_entries` collection.
@@ -167,10 +169,79 @@ function attachMongoTransport(mongooseConnection) {
     });
 
     logger.add(mongoTransport);
+    currentMongoTransport = mongoTransport;
     mongoTransportAttached = true;
     logger.info(
       `ℹ️  MongoDB log transport attached (collection=log_entries, level=info, ttlDays=${logRetentionDays})`
     );
+
+    // Write a visible startup message to MongoDB so it appears in UI logs
+    setTimeout(async () => {
+      try {
+        await mongooseConnection.db.collection('log_entries').insertOne({
+          timestamp: new Date(),
+          level: 'info',
+          message: '🚀 CoopXV Extract service started - Winston MongoDB transport active',
+          meta: {
+            event: 'service_start',
+            environment: process.env.NODE_ENV || 'production',
+            startedAt: new Date().toISOString()
+          }
+        });
+      } catch (err) {
+        // Ignore write errors on startup
+      }
+    }, 2000);
+
+    // Setup automatic recovery: reattach transport when mongoose reconnects
+    if (!reconnectionListenersAttached) {
+      mongooseConnection.on('disconnected', () => {
+        logger.warn('⚠️  MongoDB disconnected — winston transport will recover on reconnection');
+        mongoTransportAttached = false;
+        // Remove failed transport
+        if (currentMongoTransport) {
+          try {
+            logger.remove(currentMongoTransport);
+            currentMongoTransport = null;
+          } catch (err) {
+            // Ignore removal errors
+          }
+        }
+      });
+
+      mongooseConnection.on('reconnected', () => {
+        logger.info('🔄 MongoDB reconnected — reattaching winston transport...');
+        mongoTransportAttached = false;
+        // Wait a bit for connection to stabilize
+        setTimeout(async () => {
+          try {
+            attachMongoTransport(mongooseConnection);
+            logger.info('✅ Winston MongoDB transport recovered successfully');
+
+            // Write a visible recovery log directly to MongoDB so it appears in the UI
+            try {
+              await mongooseConnection.db.collection('log_entries').insertOne({
+                timestamp: new Date(),
+                level: 'info',
+                message: '🔄 Winston MongoDB transport auto-recovered after disconnection',
+                meta: {
+                  event: 'winston_recovery',
+                  recoveredAt: new Date().toISOString()
+                }
+              });
+            } catch (dbErr) {
+              // If direct write fails, just log to console
+              console.log('Note: Recovery log write to DB failed, but transport is restored');
+            }
+          } catch (err) {
+            logger.error('❌ Failed to recover winston transport:', err.message);
+          }
+        }, 1000);
+      });
+
+      reconnectionListenersAttached = true;
+      logger.info('🔄 MongoDB reconnection recovery enabled for winston transport');
+    }
   } catch (error) {
     logger.warn('⚠️  Failed to attach MongoDB log transport; DB logging disabled', {
       error: error.message
