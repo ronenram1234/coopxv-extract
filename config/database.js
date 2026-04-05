@@ -54,7 +54,13 @@ function getString(name, defaultValue) {
 
 const mongoUri = getMongoUri();
 const scanInterval = getNumber('SCAN_INTERVAL_MINUTES', 5);
-const rootDirectory = getString('ROOT_DIRECTORY', 'C:\\CoopXV');
+const rootDirectoryRaw = getString('ROOT_DIRECTORY', 'C:\\CoopXV');
+// Support comma-separated multiple root directories
+const rootDirectories = rootDirectoryRaw
+  .split(',')
+  .map((d) => d.trim())
+  .filter((d) => d.length > 0);
+const rootDirectory = rootDirectories[0]; // backward compat
 const filePattern = getString('FILE_PATTERN', 'cxv*.xlsx');
 const logDirectory = getString('LOG_DIRECTORY', path.join(process.cwd(), 'logs'));
 const logRetentionDays = 3; // hardcoded — 3-day retention for log_entries + extracted_lines
@@ -85,7 +91,7 @@ if (environment !== 'test') {
   console.log('   Environment:', environment);
   console.log('   MongoDB:', maskUri(mongoUri));
   console.log('   Scan interval (min):', scanInterval);
-  console.log('   Root directory:', rootDirectory);
+  console.log('   Root directories:', rootDirectories.join(' | '));
   console.log('   File pattern:', filePattern);
   console.log('   Log directory:', logDirectory);
   console.log('   Log retention (days):', logRetentionDays);
@@ -98,6 +104,7 @@ module.exports = {
   environment,
   scanInterval,
   rootDirectory,
+  rootDirectories,
   filePattern,
   logDirectory,
   logRetentionDays,

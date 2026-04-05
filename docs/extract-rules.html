@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoopXV Extract — כללי חילוץ שורה מעודכנת</title>
+<style>
+  :root {
+    --primary: #1a5276;
+    --accent: #2ecc71;
+    --warning: #f39c12;
+    --danger: #e74c3c;
+    --maint: #8e44ad;
+    --bg: #f8f9fa;
+    --card: #ffffff;
+    --border: #dee2e6;
+    --text: #2c3e50;
+    --muted: #6c757d;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 30px 20px;
+  }
+
+  .container { max-width: 960px; margin: 0 auto; }
+
+  header {
+    background: linear-gradient(135deg, var(--primary), #2980b9);
+    color: white;
+    padding: 36px 40px;
+    border-radius: 12px;
+    margin-bottom: 30px;
+    text-align: center;
+  }
+  header h1 { font-size: 28px; margin-bottom: 8px; }
+  header p { font-size: 15px; opacity: 0.85; }
+
+  .meta-bar {
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin-bottom: 28px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 28px 32px;
+    margin-bottom: 24px;
+  }
+  section h2 {
+    font-size: 20px;
+    color: var(--primary);
+    border-bottom: 2px solid var(--primary);
+    padding-bottom: 8px;
+    margin-bottom: 18px;
+  }
+  section h3 {
+    font-size: 16px;
+    color: var(--primary);
+    margin: 18px 0 10px;
+  }
+
+  p, li { font-size: 15px; }
+  ul, ol { padding-right: 24px; margin-bottom: 12px; }
+  li { margin-bottom: 6px; }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    margin: 20px 0;
+  }
+  .flow-step {
+    background: var(--primary);
+    color: white;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 280px;
+  }
+  .flow-arrow {
+    font-size: 22px;
+    color: var(--primary);
+    line-height: 1;
+    padding: 4px 0;
+  }
+
+  /* Decision tree */
+  .decision-tree {
+    background: #f0f4f8;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 13.5px;
+    line-height: 2;
+    direction: ltr;
+    text-align: left;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+
+  /* Status badges */
+  .badge {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    color: white;
+  }
+  .badge-active { background: var(--accent); }
+  .badge-maint  { background: var(--maint); }
+  .badge-closed { background: var(--muted); }
+  .badge-insert { background: #27ae60; }
+  .badge-skip   { background: #95a5a6; }
+  .badge-update { background: var(--warning); color: #333; }
+
+  /* Rules table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  th {
+    background: var(--primary);
+    color: white;
+    padding: 10px 14px;
+    text-align: right;
+    font-weight: 600;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f8f9fa; }
+  tr:hover td { background: #eef3f7; }
+
+  /* Comparison box */
+  .compare-box {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 14px 0;
+  }
+  .compare-card {
+    background: #f0f4f8;
+    border-radius: 8px;
+    padding: 16px;
+    border-right: 4px solid var(--primary);
+  }
+  .compare-card h4 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: var(--primary);
+  }
+  .compare-card code {
+    display: block;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 12.5px;
+    direction: ltr;
+    text-align: left;
+    white-space: pre;
+  }
+
+  /* Highlight boxes */
+  .highlight {
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 14px 0;
+    font-size: 14px;
+  }
+  .highlight-info {
+    background: #eaf2f8;
+    border-right: 4px solid #3498db;
+  }
+  .highlight-warn {
+    background: #fef9e7;
+    border-right: 4px solid var(--warning);
+  }
+  .highlight-success {
+    background: #eafaf1;
+    border-right: 4px solid var(--accent);
+  }
+
+  /* Key files */
+  .file-list {
+    list-style: none;
+    padding: 0;
+  }
+  .file-list li {
+    padding: 8px 14px;
+    background: #f0f4f8;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-size: 13.5px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .file-list li span:first-child {
+    direction: ltr;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 20px 0 10px;
+  }
+
+  @media (max-width: 600px) {
+    header { padding: 24px 20px; }
+    section { padding: 18px 16px; }
+    .compare-box { grid-template-columns: 1fr; }
+    .flow-step { min-width: auto; width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <header>
+    <h1>CoopXV Extract Service</h1>
+    <p>כללי חילוץ שורה מעודכנת — Updated Line Extraction Rules</p>
+  </header>
+
+  <div class="meta-bar">
+    <span><strong>מסמך:</strong> תיעוד כללי עסקיים — Extract Service</span>
+    <span><strong>סוכן:</strong> @michal — Business Analyst</span>
+    <span><strong>תאריך:</strong> 2026-04-05</span>
+    <span><strong>פרויקט:</strong> CoopXV</span>
+  </div>
+
+  <!-- ──────────────── SECTION 1: OVERVIEW ──────────────── -->
+  <section>
+    <h2>1. סקירה כללית — Overview</h2>
+    <p>
+      שירות ה-Extract מנטר קבצי Excel (בתבנית <code>*.xlsx</code>) מתיקיית המקור, קורא את הגיליון
+      <strong>BData_in</strong>, ומזהה שורות פעילות (עמודה A=1). השירות מזהה שורות חדשות ושורות
+      שהשתנו לעומת הסריקה הקודמת, ומכניס אותן ל-MongoDB.
+    </p>
+    <div class="highlight highlight-info">
+      <strong>עיקרון מפתח:</strong> שורה נחשבת "מעודכנת" כאשר מספר השורה זהה לסריקה הקודמת,
+      אך תוכן העמודות השתנה — השוואה טקסטואלית, עמודה-עמודה.
+    </div>
+  </section>
+
+  <!-- ──────────────── SECTION 2: DATA FLOW ──────────────── -->
+  <section>
+    <h2>2. תהליך הסריקה — Scan Flow</h2>
+    <div class="flow">
+      <div class="flow-step">סריקת תיקייה לקבצי *.xlsx</div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">קריאת גיליון BData_in בלבד</div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">סינון שורות: עמודה A = 1 (פעילות)</div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">טעינת שורה אחרונה שנשלפה מ-DB</div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">בחירת שורה הבאה: חדשה או מעודכנת?</div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">השוואת תוכן — שונה? → הכנסה | זהה? → דילוג</div>
+      <div class="flow-arrow">▼</div>
+      <div class="flow-step">עדכון סטטוס להקה ב-MongoDB</div>
+    </div>
+  </section>
+
+  <!-- ──────────────── SECTION 3: COLUMN A RULES ──────────────── -->
+  <section>
+    <h2>3. כללי עמודה A — Column A Classification</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ערך בעמודה A</th>
+          <th>משמעות</th>
+          <th>פעולה</th>
+          <th>סטטוס</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>1</strong></td>
+          <td>שורה פעילה — מועמדת לחילוץ</td>
+          <td><span class="badge badge-insert">INSERT</span> אם חדשה/שונתה</td>
+          <td><span class="badge badge-active">active</span></td>
+        </tr>
+        <tr>
+          <td><strong>11</strong></td>
+          <td>דגל תחזוקה — נספרת בנפרד</td>
+          <td><span class="badge badge-skip">COUNT ONLY</span></td>
+          <td><span class="badge badge-maint">maintenance</span></td>
+        </tr>
+        <tr>
+          <td><strong>אחר</strong></td>
+          <td>שורה סגורה / לא רלוונטית</td>
+          <td><span class="badge badge-skip">IGNORE</span></td>
+          <td><span class="badge badge-closed">closed</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>סטטוס להקה (Flock Status)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>תנאי</th>
+          <th>סטטוס</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>יש שורות עם A=1</td><td><span class="badge badge-active">active</span></td></tr>
+        <tr><td>אין A=1, יש A=11</td><td><span class="badge badge-maint">maintenance</span></td></tr>
+        <tr><td>אין A=1 ואין A=11</td><td><span class="badge badge-closed">closed</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ──────────────── SECTION 4: UPDATED LINE DETECTION ──────────────── -->
+  <section>
+    <h2>4. זיהוי שורה מעודכנת — Updated Line Detection</h2>
+
+    <h3>עץ החלטות — Decision Tree</h3>
+    <div class="decision-tree">┌─ Row number > lastProcessedRowNumber?
+│  └─ YES → <span style="color:#27ae60;font-weight:700">INSERT AS NEW</span>
+│
+├─ Row number == lastProcessedRowNumber?
+│  └─ Compare content with areRowsEqualAsText()
+│     ├─ Content IDENTICAL → <span style="color:#95a5a6;font-weight:700">SKIP (unchanged)</span>
+│     └─ Content CHANGED  → <span style="color:#e67e22;font-weight:700">INSERT AS UPDATED</span>
+│
+└─ No candidates (A=1) found?
+   └─ <span style="color:#95a5a6;font-weight:700">SKIP (no rows to process)</span></div>
+
+    <h3>סדר עדיפויות — Priority</h3>
+    <ol>
+      <li><strong>שורה חדשה (rowNumber גבוה יותר)</strong> — עדיפות ראשונה</li>
+      <li><strong>אותה שורה — תוכן שונה</strong> — עדיפות שנייה (שורה מעודכנת)</li>
+      <li><strong>אותה שורה — תוכן זהה</strong> — דילוג</li>
+    </ol>
+  </section>
+
+  <!-- ──────────────── SECTION 5: COMPARISON LOGIC ──────────────── -->
+  <section>
+    <h2>5. לוגיקת השוואה — Content Comparison</h2>
+    <p>
+      הפונקציה <code>areRowsEqualAsText()</code> משווה בין השורה השמורה ב-DB לבין השורה הנוכחית מהקובץ.
+    </p>
+
+    <div class="compare-box">
+      <div class="compare-card">
+        <h4>שורה שמורה (DB)</h4>
+        <code>normalizeStoredDataToText(doc.data)
+→ { A: "1", B: "אורטל", C: "3", ... }</code>
+      </div>
+      <div class="compare-card">
+        <h4>שורה נוכחית (Excel)</h4>
+        <code>buildDataAndMetadataFromRow(row)
+→ { A: "1", B: "אורטל", C: "4", ... }</code>
+      </div>
+    </div>
+
+    <h3>כללי השוואה</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>כלל</th>
+          <th>פירוט</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>נורמליזציה</strong></td>
+          <td>כל ערך מומר ל-String ועובר <code>.trim()</code></td>
+        </tr>
+        <tr>
+          <td><strong>השוואה עמודה-עמודה</strong></td>
+          <td>כל העמודות משני המקורות (union) נבדקות</td>
+        </tr>
+        <tr>
+          <td><strong>רגיש לאותיות</strong></td>
+          <td>Case-sensitive — "ABC" ≠ "abc"</td>
+        </tr>
+        <tr>
+          <td><strong>עמודות ריקות בסוף</strong></td>
+          <td>מתעלמים מעמודות שריקות בשני הצדדים</td>
+        </tr>
+        <tr>
+          <td><strong>הבדל אחד = שינוי</strong></td>
+          <td>מספיק שעמודה אחת שונה → השורה "מעודכנת"</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="highlight highlight-warn">
+      <strong>שימו לב:</strong> גם הבדל קטן כמו רווח נוסף או שינוי באות גדולה/קטנה
+      ייחשב כשינוי ויגרום להכנסת שורה חדשה.
+    </div>
+  </section>
+
+  <!-- ──────────────── SECTION 6: FILE FILTERING ──────────────── -->
+  <section>
+    <h2>6. סינון קבצים — File Selection Rules</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>כלל</th>
+          <th>פירוט</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>תיקיית מקור</strong></td>
+          <td>ROOT_DIRECTORY (ברירת מחדל: <code>G:\CoopXV</code>)</td>
+        </tr>
+        <tr>
+          <td><strong>תבנית קבצים</strong></td>
+          <td>FILE_PATTERN (ברירת מחדל: <code>*.xlsx</code>)</td>
+        </tr>
+        <tr>
+          <td><strong>גיליון</strong></td>
+          <td>רק <code>BData_in</code> (case-insensitive)</td>
+        </tr>
+        <tr>
+          <td><strong>קבצים מוחרגים</strong></td>
+          <td>קבצים בתיקיית LOG_DIRECTORY + קבצי <code>scan*.xlsx</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ──────────────── SECTION 7: DATA PERSISTENCE ──────────────── -->
+  <section>
+    <h2>7. שמירה ב-MongoDB — Data Persistence</h2>
+
+    <h3>אוספים (Collections)</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Collection</th>
+          <th>תיאור</th>
+          <th>מפתח</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>extracted_lines</code></td>
+          <td>שורות שנשלפו — כל שורה חדשה/מעודכנת</td>
+          <td>scanId + filename + rowNumber</td>
+        </tr>
+        <tr>
+          <td><code>scans</code></td>
+          <td>מטא-דאטה של כל סריקה — סטטיסטיקות, קבצים שעובדו</td>
+          <td>scanNumber + timestamp</td>
+        </tr>
+        <tr>
+          <td><code>flock_status</code></td>
+          <td>סטטוס להקה לפי קובץ — active / maintenance / closed</td>
+          <td>filename (upsert)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>מבנה שורה שנשלפה (ExtractedLine)</h3>
+    <div class="decision-tree">{ scanId, timestamp, filePath, folder, filename,
+  sheetName: "BData_in",
+  rowNumber: 5,
+  data:    { A: "1", B: "אורטל", C: "3", D: "42", ... },
+  display: { A: "1", B: "אורטל", C: "3", D: "42", ... },
+  displayColumnNames: { A: "סטטוס", B: "משק", C: "לול", ... },
+  metadata: { columnCount, firstColumn, lastColumn, hasData }
+}</div>
+
+    <div class="highlight highlight-success">
+      <strong>שמירת נתונים:</strong> 3 ימים — ניקוי יומי אוטומטי מוחק רשומות ישנות מעבר לתקופה זו.
+    </div>
+  </section>
+
+  <!-- ──────────────── SECTION 8: SCAN CONFIG ──────────────── -->
+  <section>
+    <h2>8. הגדרות — Configuration</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>משתנה סביבה</th>
+          <th>תיאור</th>
+          <th>ברירת מחדל</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>SCAN_INTERVAL_MINUTES</code></td><td>תדירות סריקה בדקות</td><td>5</td></tr>
+        <tr><td><code>ROOT_DIRECTORY</code></td><td>תיקיית קבצי Excel</td><td>G:\CoopXV</td></tr>
+        <tr><td><code>FILE_PATTERN</code></td><td>תבנית קבצים</td><td>*.xlsx</td></tr>
+        <tr><td><code>LOG_DIRECTORY</code></td><td>תיקיית לוגים</td><td>—</td></tr>
+        <tr><td><code>LOG_EXCEL_LINES_TO_EXTRACT</code></td><td>ייצוא שורות ל-Excel?</td><td>false</td></tr>
+        <tr><td><code>MONGODB_URI_DEV</code></td><td>חיבור DB — פיתוח</td><td>—</td></tr>
+        <tr><td><code>MONGODB_URI_PROD</code></td><td>חיבור DB — ייצור</td><td>—</td></tr>
+        <tr><td><code>NODE_ENV</code></td><td>סביבת הרצה</td><td>development</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ──────────────── SECTION 9: KEY FILES ──────────────── -->
+  <section>
+    <h2>9. קבצים מרכזיים — Key Files</h2>
+    <ul class="file-list">
+      <li><span>scripts/scan-and-log.js</span><span>לוגיקת חילוץ מרכזית</span></li>
+      <li><span>index.js</span><span>נקודת כניסה + לולאת סריקה</span></li>
+      <li><span>models/ExtractedLine.js</span><span>סכמת שורות שנשלפו</span></li>
+      <li><span>models/Scan.js</span><span>סכמת מטא-דאטה סריקה</span></li>
+      <li><span>models/FlockStatus.js</span><span>סכמת סטטוס להקה</span></li>
+      <li><span>config/database.js</span><span>הגדרות DB ואפליקציה</span></li>
+      <li><span>config/logger.js</span><span>הגדרות Winston logging</span></li>
+    </ul>
+  </section>
+
+  <!-- ──────────────── SECTION 10: SUMMARY ──────────────── -->
+  <section>
+    <h2>10. סיכום כללים עסקיים — Business Rules Summary</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>כלל</th>
+          <th>סטטוס</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>רק גיליון BData_in מעובד</td><td>&#10003;</td></tr>
+        <tr><td>2</td><td>רק שורות עם A=1 מועמדות לחילוץ</td><td>&#10003;</td></tr>
+        <tr><td>3</td><td>A=11 = דגל תחזוקה — נספר בלבד</td><td>&#10003;</td></tr>
+        <tr><td>4</td><td>שורה חדשה (rowNumber גבוה) → הכנסה</td><td>&#10003;</td></tr>
+        <tr><td>5</td><td>אותה שורה + תוכן שונה → הכנסה כמעודכנת</td><td>&#10003;</td></tr>
+        <tr><td>6</td><td>אותה שורה + תוכן זהה → דילוג</td><td>&#10003;</td></tr>
+        <tr><td>7</td><td>השוואה טקסטואלית, case-sensitive, עם trim</td><td>&#10003;</td></tr>
+        <tr><td>8</td><td>עמודות ריקות בסוף מתעלמים מהן</td><td>&#10003;</td></tr>
+        <tr><td>9</td><td>סטטוס להקה נגזר מנוכחות A=1 / A=11</td><td>&#10003;</td></tr>
+        <tr><td>10</td><td>שמירת נתונים: 3 ימים עם ניקוי יומי</td><td>&#10003;</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>
+    CoopXV Extract Rules Documentation &mdash; Generated by @michal (Business Analyst) &mdash; 2026-04-05
+  </footer>
+
+</div>
+</body>
+</html>

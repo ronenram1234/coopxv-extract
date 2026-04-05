@@ -29,7 +29,7 @@ const mongoose = require('mongoose');
 
 const {
   environment,
-  rootDirectory,
+  rootDirectories,
   filePattern,
   logDirectory,
   logExcelLinesToExtract
@@ -372,11 +372,16 @@ async function runScan() {
   }
 
   logger.info('📂 Ensuring log directory exists...');
-  logger.info(`🔍 Scanning directory: ${rootDirectory}`);
+  logger.info(`🔍 Scanning ${rootDirectories.length} root directory(ies): ${rootDirectories.join(' | ')}`);
   logger.info(`🔍 Looking for pattern: ${filePattern}`);
 
   const regex = patternToRegex(filePattern);
-  const allFiles = walkSync(rootDirectory);
+  const allFiles = [];
+  for (const rootDir of rootDirectories) {
+    const dirFiles = walkSync(rootDir);
+    logger.info(`   📁 ${rootDir}: ${dirFiles.length} file(s)`);
+    allFiles.push(...dirFiles);
+  }
   const logDirNormalized =
     typeof logDirectory === 'string' && logDirectory
       ? path.resolve(logDirectory).toLowerCase()

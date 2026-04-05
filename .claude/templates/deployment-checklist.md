@@ -2,7 +2,6 @@
 
 **Date:** {Date}
 **Environment:** Staging | Production
-**Deployed by:** Michael
 
 ## Pre-Deployment
 - [ ] All tests passing

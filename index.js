@@ -34,7 +34,7 @@ const { runScan } = require('./scripts/scan-and-log');
 const { cleanupOldScansAndLines } = require('./scripts/cleanup-old-scans');
 // [2026-02-03] winston-migration: Replace console.log with structured logging
 const logger = require('./config/logger');
-const { formatTimestampIsrael, attachMongoTransport } = require('./config/logger');
+const { formatTimestampIsrael, attachMongoTransport, startLogHealthCheck, stopLogHealthCheck } = require('./config/logger');
 
 const SEPARATOR = '='.repeat(70);
 // [2026-02-03] statistics-tracking: Track total scans for shutdown message
@@ -139,6 +139,9 @@ async function main() {
     if (typeof attachMongoTransport === 'function') {
       attachMongoTransport(connection);
     }
+
+    // Health check: detect and recover silently-dead Winston MongoDB transport
+    startLogHealthCheck(connection, scanInterval * 60 * 1000);
   } catch (error) {
     const details =
       (error && (error.stack || error.message)) || JSON.stringify(error, null, 2) || String(error);
@@ -199,6 +202,7 @@ async function handleShutdown(signal) {
   if (cleanupIntervalHandle) {
     clearInterval(cleanupIntervalHandle);
   }
+  stopLogHealthCheck();
   logger.info(`📊 Total scans completed: ${scanCount}`);
   logger.info('🔌 Disconnecting from MongoDB...');
 

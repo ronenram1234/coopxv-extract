@@ -1,6 +1,5 @@
 # Requirement Specification - {Feature Name}
 
-**Created by:** Shira
 **Date:** {Date}
 **Status:** Draft | Approved
 

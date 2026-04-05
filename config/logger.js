@@ -116,6 +116,8 @@ const logger = winston.createLogger({
 let mongoTransportAttached = false;
 let currentMongoTransport = null;
 let reconnectionListenersAttached = false;
+let healthCheckIntervalHandle = null;
+let lastKnownLogWrite = null;
 
 /**
  * Attach a MongoDB Winston transport so logs are also written to the `log_entries` collection.
@@ -249,6 +251,93 @@ function attachMongoTransport(mongooseConnection) {
   }
 }
 
+/**
+ * Periodically verify that the Winston MongoDB transport is still writing to log_entries.
+ * If no writes detected within the check interval, remove and re-attach the transport.
+ *
+ * @param {import('mongoose').Connection} mongooseConnection
+ * @param {number} checkIntervalMs — how often to run the health check (default: 5 min)
+ */
+function startLogHealthCheck(mongooseConnection, checkIntervalMs = 5 * 60 * 1000) {
+  if (healthCheckIntervalHandle) {
+    clearInterval(healthCheckIntervalHandle);
+  }
+
+  lastKnownLogWrite = new Date();
+
+  healthCheckIntervalHandle = setInterval(async () => {
+    if (!mongooseConnection || mongooseConnection.readyState !== 1) {
+      return; // DB not connected, skip check
+    }
+
+    try {
+      const latest = await mongooseConnection.db
+        .collection('log_entries')
+        .find()
+        .sort({ timestamp: -1 })
+        .limit(1)
+        .project({ timestamp: 1 })
+        .toArray();
+
+      if (!latest.length) return;
+
+      const latestTimestamp = new Date(latest[0].timestamp);
+      const staleSince = Date.now() - latestTimestamp.getTime();
+      const staleThresholdMs = checkIntervalMs * 2; // 2x the interval = stale
+
+      if (staleSince > staleThresholdMs) {
+        console.warn(
+          `[log-health-check] log_entries stale for ${Math.round(staleSince / 60000)}min — reattaching Winston MongoDB transport`
+        );
+
+        // Remove dead transport
+        if (currentMongoTransport) {
+          try {
+            logger.remove(currentMongoTransport);
+          } catch (_) { /* ignore */ }
+          currentMongoTransport = null;
+        }
+        mongoTransportAttached = false;
+
+        // Re-attach
+        attachMongoTransport(mongooseConnection);
+
+        if (mongoTransportAttached) {
+          // Write a recovery marker directly so it's visible in UI
+          try {
+            await mongooseConnection.db.collection('log_entries').insertOne({
+              timestamp: new Date(),
+              level: 'warn',
+              message: '🔧 Winston MongoDB transport recovered by health check (was stale)',
+              meta: { event: 'health_check_recovery', staleSinceMs: staleSince }
+            });
+          } catch (_) { /* ignore */ }
+          console.log('[log-health-check] Transport re-attached successfully');
+        }
+      } else {
+        lastKnownLogWrite = latestTimestamp;
+      }
+    } catch (err) {
+      console.warn(`[log-health-check] Check failed: ${err.message}`);
+    }
+  }, checkIntervalMs);
+
+  // Don't let the health check keep the process alive on shutdown
+  if (healthCheckIntervalHandle.unref) {
+    healthCheckIntervalHandle.unref();
+  }
+
+  logger.info(`🩺 Log health check enabled (interval: ${checkIntervalMs / 60000}min)`);
+}
+
+/** Stop the log health check interval. */
+function stopLogHealthCheck() {
+  if (healthCheckIntervalHandle) {
+    clearInterval(healthCheckIntervalHandle);
+    healthCheckIntervalHandle = null;
+  }
+}
+
 /** Path for daily scan-results Excel file (Israel date). */
 function getScanResultsExcelPath() {
   const dateStr = formatDateIsrael(new Date()).replace(/\//g, '-');
@@ -261,3 +350,5 @@ module.exports.formatDateIsrael = formatDateIsrael;
 module.exports.formatLocalTimeIsrael = formatLocalTimeIsrael;
 module.exports.getScanResultsExcelPath = getScanResultsExcelPath;
 module.exports.attachMongoTransport = attachMongoTransport;
+module.exports.startLogHealthCheck = startLogHealthCheck;
+module.exports.stopLogHealthCheck = stopLogHealthCheck;
