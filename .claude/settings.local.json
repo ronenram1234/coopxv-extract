@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash(*)",
       "Bash(netlify status:*)",
       "Bash(curl -s -X POST -H \"Authorization: Bearer nfp_Mt6w6v7RenvCv99DzU8UhENCL7PU4Ydn76e9\" -H \"Content-Type: application/json\" -d \"{\"\"name\"\": \"\"coopxv-dev\"\"}\" https://api.netlify.com/api/v1/uavzonemailer/sites)",
       "Bash(curl -s -X POST -H \"Authorization: Bearer nfp_Mt6w6v7RenvCv99DzU8UhENCL7PU4Ydn76e9\" -H \"Content-Type: application/json\" -d \"{\"\"name\"\": \"\"uavzone-app-dev\"\"}\" https://api.netlify.com/api/v1/uavzonemailer/sites)",
@@ -79,7 +80,8 @@
       "Bash(nslookup:*)",
       "Bash(cd:*)",
       "Bash(npx live-server:*)",
-      "Bash(start:*)"
+      "Bash(start:*)",
+      "Bash(npm run:*)"
     ]
   }
 }

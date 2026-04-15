@@ -112,6 +112,11 @@ const logger = winston.createLogger({
   transports: [applicationTransport, errorTransport, consoleTransport]
 });
 
+// Prevent unhandled transport errors from crashing the process
+logger.on('error', (err) => {
+  console.error(`[winston] Logger error (non-fatal): ${err.message}`);
+});
+
 // Attach MongoDB transport at runtime (after Mongoose connects)
 let mongoTransportAttached = false;
 let currentMongoTransport = null;
