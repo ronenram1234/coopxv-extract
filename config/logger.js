@@ -165,14 +165,21 @@ function attachMongoTransport(mongooseConnection) {
       metaKey: 'meta'
     });
 
-    // Prevent winston-mongodb connection errors from crashing the process
+    // Prevent winston-mongodb connection errors from crashing the process.
+    // On error: remove the broken transport immediately so logger calls don't hang.
+    // The health check or reconnect handler will reattach it later.
     mongoTransport.on('error', (err) => {
       if (!mongoTransport._errorLogged) {
         mongoTransport._errorLogged = true;
-        console.error(`[winston-mongodb] Transport error (further errors suppressed): ${err.message}`);
-        // Reset flag after 5 minutes so we log again if the problem persists
+        console.error(`[winston-mongodb] Transport error — removing to prevent hang: ${err.message}`);
         setTimeout(() => { mongoTransport._errorLogged = false; }, 5 * 60 * 1000);
       }
+      // Remove broken transport so subsequent logger calls don't block
+      try {
+        logger.remove(mongoTransport);
+      } catch (_) { /* already removed */ }
+      currentMongoTransport = null;
+      mongoTransportAttached = false;
     });
 
     logger.add(mongoTransport);

@@ -75,11 +75,17 @@ async function executeScan() {
       logger.info(`   💾 Log file: ${stats.logFile}`);
     }
   } catch (error) {
-    logger.error('❌ Scan failed:', { error: error.message, stack: error.stack });
+    logger.error(`❌ Scan failed: ${error.message || error}`);
+    if (error.stack) logger.error(error.stack);
   } finally {
-    logger.info('\n' + SEPARATOR);
-    logger.info(`⏰ Next scan in ${scanInterval} minute(s)`);
-    logger.info(SEPARATOR + '\n');
+    try {
+      logger.info('\n' + SEPARATOR);
+      logger.info(`⏰ Next scan in ${scanInterval} minute(s)`);
+      logger.info(SEPARATOR + '\n');
+    } catch (_) {
+      // Fallback if logger is broken — ensure scan loop continues
+      console.log(`⏰ Next scan in ${scanInterval} minute(s)`);
+    }
   }
 }
 
