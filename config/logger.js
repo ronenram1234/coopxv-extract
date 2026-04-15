@@ -26,7 +26,7 @@ const path = require('path');
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 
-const { logDirectory, logRetentionDays } = require('./database');
+const { logDirectory, logRetentionDays, mongoUri } = require('./database');
 
 /** Format a date in Israel timezone (Asia/Jerusalem) for all application logging. */
 function formatTimestampIsrael(date = new Date()) {
@@ -115,6 +115,7 @@ const logger = winston.createLogger({
 // Prevent unhandled transport errors from crashing the process
 logger.on('error', (err) => {
   console.error(`[winston] Logger error (non-fatal): ${err.message}`);
+  if (err.stack) console.error(`[winston] Stack: ${err.stack}`);
 });
 
 // Attach MongoDB transport at runtime (after Mongoose connects)
@@ -140,10 +141,8 @@ function attachMongoTransport(mongooseConnection) {
 
   let MongoDB;
   try {
-    // Dynamic require avoids loading the transport when not needed (e.g. during tests)
     MongoDB = require('winston-mongodb').MongoDB;
   } catch (error) {
-    // If the transport cannot be loaded, keep file/console logging working
     logger.warn('⚠️  Failed to load winston-mongodb transport; DB logging disabled', {
       error: error.message
     });
@@ -156,30 +155,52 @@ function attachMongoTransport(mongooseConnection) {
 
   try {
     const mongoTransport = new MongoDB({
-      // Native MongoDB Db instance from mongoose connection
-      db: mongooseConnection.db,
+      // Use connection string so the transport manages its own connection
+      db: mongoUri,
+      dbName: mongooseConnection.db.databaseName,
       collection: 'log_entries',
-      level: 'info', // info, warn, error → enough to see each run
+      level: 'info',
       expireAfterSeconds: ttlSeconds && ttlSeconds > 0 ? ttlSeconds : undefined,
-      // Store additional structured data under `meta` if provided
-      metaKey: 'meta'
+      metaKey: 'meta',
+      options: { useUnifiedTopology: true, useNewUrlParser: true }
     });
 
-    // Prevent winston-mongodb connection errors from crashing the process.
-    // On error: remove the broken transport immediately so logger calls don't hang.
-    // The health check or reconnect handler will reattach it later.
+    // Wrap the transport's log method to catch internal crashes (winston-mongodb
+    // bug: its log() throws when the internal DB collection reference is undefined
+    // after a connection drop — see winston-mongodb.js:206).
+    const originalLog = mongoTransport.log.bind(mongoTransport);
+    mongoTransport.log = function safeLog(info, callback) {
+      try {
+        return originalLog(info, callback);
+      } catch (err) {
+        // Transport's internal state is broken — swallow and remove
+        if (!mongoTransport._errorLogged) {
+          mongoTransport._errorLogged = true;
+          console.error(`[winston-mongodb] log() crashed — removing transport: ${err.message}`);
+          setTimeout(() => { mongoTransport._errorLogged = false; }, 5 * 60 * 1000);
+        }
+        setImmediate(() => {
+          try { logger.remove(mongoTransport); } catch (_) {}
+          currentMongoTransport = null;
+          mongoTransportAttached = false;
+        });
+        // Call back without error so the stream pipeline continues
+        if (callback) callback();
+      }
+    };
+
+    // Also handle async transport errors (e.g. socket timeouts)
     mongoTransport.on('error', (err) => {
       if (!mongoTransport._errorLogged) {
         mongoTransport._errorLogged = true;
-        console.error(`[winston-mongodb] Transport error — removing to prevent hang: ${err.message}`);
+        console.error(`[winston-mongodb] Transport error — will remove: ${err.message}`);
         setTimeout(() => { mongoTransport._errorLogged = false; }, 5 * 60 * 1000);
       }
-      // Remove broken transport so subsequent logger calls don't block
-      try {
-        logger.remove(mongoTransport);
-      } catch (_) { /* already removed */ }
-      currentMongoTransport = null;
-      mongoTransportAttached = false;
+      setImmediate(() => {
+        try { logger.remove(mongoTransport); } catch (_) {}
+        currentMongoTransport = null;
+        mongoTransportAttached = false;
+      });
     });
 
     logger.add(mongoTransport);

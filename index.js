@@ -37,6 +37,7 @@ const logger = require('./config/logger');
 const { formatTimestampIsrael, attachMongoTransport, startLogHealthCheck, stopLogHealthCheck } = require('./config/logger');
 
 const SEPARATOR = '='.repeat(70);
+const BUILD_TIMESTAMP = '2026-04-15 13:48 IST';
 // [2026-02-03] statistics-tracking: Track total scans for shutdown message
 let scanCount = 0;
 let scanLoopAborted = false;
@@ -45,7 +46,7 @@ let shuttingDown = false;
 
 function logBanner() {
   logger.info(SEPARATOR);
-  logger.info('🚀 CoopXV-Extract Service Starting');
+  logger.info(`🚀 CoopXV-Extract Service Starting (build: ${BUILD_TIMESTAMP})`);
   logger.info(SEPARATOR);
   logger.info(`📅 Started at: ${formatTimestampIsrael()}`);
   logger.info(`🔧 Environment: ${environment}`);
@@ -75,8 +76,12 @@ async function executeScan() {
       logger.info(`   💾 Log file: ${stats.logFile}`);
     }
   } catch (error) {
-    logger.error(`❌ Scan failed: ${error.message || error}`);
-    if (error.stack) logger.error(error.stack);
+    // Always print to console so error is visible even if logger is broken
+    console.error(`❌ Scan failed: ${error.message || error}`);
+    if (error.stack) console.error(error.stack);
+    try {
+      logger.error(`❌ Scan failed: ${error.message || error}`);
+    } catch (_) { /* logger broken, already printed to console */ }
   } finally {
     try {
       logger.info('\n' + SEPARATOR);
@@ -163,7 +168,8 @@ async function main() {
   logger.info('Press Ctrl+C to stop.\n');
 
   runScanLoop().catch((err) => {
-    logger.error('❌ Scan loop failure:', err.stack || err.message || err);
+    console.error('❌ Scan loop failure:', err.stack || err.message || err);
+    try { logger.error(`❌ Scan loop failure: ${err.stack || err.message || err}`); } catch (_) {}
   });
 
   // Daily cleanup: remove scans and extracted_lines older than LOG_RETENTION_DAYS

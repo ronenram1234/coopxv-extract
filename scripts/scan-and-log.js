@@ -662,10 +662,9 @@ async function runScan() {
     stats.scanSaved = true;
     logger.info(`✅ Scan document saved with _id=${scanDoc._id}`);
   } catch (error) {
-    logger.error('❌ Failed to write scan document:', {
-      error: error.message,
-      stack: error.stack
-    });
+    console.error(`❌ Failed to write scan document: ${error.message}`);
+    if (error.stack) console.error(error.stack);
+    try { logger.error(`❌ Failed to write scan document: ${error.message}`); } catch (_) {}
     return stats;
   }
 
@@ -687,10 +686,9 @@ async function runScan() {
         stats.logFile = getScanResultsExcelPath();
       }
     } catch (error) {
-      logger.error('❌ Failed to write extracted_lines documents:', {
-        error: error.message,
-        stack: error.stack
-      });
+      console.error(`❌ Failed to write extracted_lines: ${error.message}`);
+      if (error.stack) console.error(error.stack);
+      try { logger.error(`❌ Failed to write extracted_lines: ${error.message}`); } catch (_) {}
     }
   }
 
@@ -749,10 +747,9 @@ async function runScan() {
         `✅ Flock status upserted: ${result.upsertedCount} new, ${result.modifiedCount} updated`
       );
     } catch (error) {
-      logger.error('❌ Failed to upsert flock_status documents:', {
-        error: error.message,
-        stack: error.stack
-      });
+      console.error(`❌ Failed to upsert flock_status: ${error.message}`);
+      if (error.stack) console.error(error.stack);
+      try { logger.error(`❌ Failed to upsert flock_status: ${error.message}`); } catch (_) {}
     }
   }
 
