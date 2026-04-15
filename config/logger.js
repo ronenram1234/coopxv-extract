@@ -26,7 +26,8 @@ const path = require('path');
 const winston = require('winston');
 const DailyRotateFile = require('winston-daily-rotate-file');
 
-const { logDirectory, logRetentionDays, mongoUri } = require('./database');
+const { Writable } = require('stream');
+const { logDirectory, logRetentionDays } = require('./database');
 
 /** Format a date in Israel timezone (Asia/Jerusalem) for all application logging. */
 function formatTimestampIsrael(date = new Date()) {
@@ -118,258 +119,45 @@ logger.on('error', (err) => {
   if (err.stack) console.error(`[winston] Stack: ${err.stack}`);
 });
 
-// Attach MongoDB transport at runtime (after Mongoose connects)
+// Custom MongoDB log transport — writes to log_entries using mongoose connection.
+// No winston-mongodb, no separate driver, no TLS issues.
 let mongoTransportAttached = false;
-let currentMongoTransport = null;
-let reconnectionListenersAttached = false;
-let healthCheckIntervalHandle = null;
-let lastKnownLogWrite = null;
+let logCollection = null;
 
-/**
- * Attach a MongoDB Winston transport so logs are also written to the `log_entries` collection.
- * Call this AFTER mongoose.connect, passing in mongoose.connection.
- *
- * @param {import('mongoose').Connection} mongooseConnection
- */
 function attachMongoTransport(mongooseConnection) {
-  if (!mongooseConnection || !mongooseConnection.db) {
-    return;
-  }
-  if (mongoTransportAttached) {
-    return;
-  }
-
-  let MongoDB;
-  try {
-    MongoDB = require('winston-mongodb').MongoDB;
-  } catch (error) {
-    logger.warn('⚠️  Failed to load winston-mongodb transport; DB logging disabled', {
-      error: error.message
-    });
-    return;
-  }
-
-  const ttlSeconds = Number.isFinite(logRetentionDays)
-    ? logRetentionDays * 24 * 60 * 60
-    : undefined;
+  if (!mongooseConnection || !mongooseConnection.db) return;
+  if (mongoTransportAttached) return;
 
   try {
-    const mongoTransport = new MongoDB({
-      // Use connection string so the transport manages its own connection
-      db: mongoUri,
-      dbName: mongooseConnection.db.databaseName,
-      collection: 'log_entries',
-      level: 'info',
-      expireAfterSeconds: ttlSeconds && ttlSeconds > 0 ? ttlSeconds : undefined,
-      metaKey: 'meta',
-      options: { useUnifiedTopology: true, useNewUrlParser: true }
-    });
+    logCollection = mongooseConnection.db.collection('log_entries');
 
-    // Wrap the transport's log method to catch internal crashes (winston-mongodb
-    // bug: its log() throws when the internal DB collection reference is undefined
-    // after a connection drop — see winston-mongodb.js:206).
-    const originalLog = mongoTransport.log.bind(mongoTransport);
-    mongoTransport.log = function safeLog(info, callback) {
-      try {
-        return originalLog(info, callback);
-      } catch (err) {
-        // Transport's internal state is broken — swallow and remove
-        if (!mongoTransport._errorLogged) {
-          mongoTransport._errorLogged = true;
-          console.error(`[winston-mongodb] log() crashed — removing transport: ${err.message}`);
-          setTimeout(() => { mongoTransport._errorLogged = false; }, 5 * 60 * 1000);
-        }
-        setImmediate(() => {
-          try { logger.remove(mongoTransport); } catch (_) {}
-          currentMongoTransport = null;
-          mongoTransportAttached = false;
-        });
-        // Call back without error so the stream pipeline continues
-        if (callback) callback();
-      }
-    };
-
-    // Also handle async transport errors (e.g. socket timeouts)
-    mongoTransport.on('error', (err) => {
-      if (!mongoTransport._errorLogged) {
-        mongoTransport._errorLogged = true;
-        console.error(`[winston-mongodb] Transport error — will remove: ${err.message}`);
-        setTimeout(() => { mongoTransport._errorLogged = false; }, 5 * 60 * 1000);
-      }
-      setImmediate(() => {
-        try { logger.remove(mongoTransport); } catch (_) {}
-        currentMongoTransport = null;
-        mongoTransportAttached = false;
-      });
-    });
-
-    logger.add(mongoTransport);
-    currentMongoTransport = mongoTransport;
-    mongoTransportAttached = true;
-    logger.info(
-      `ℹ️  MongoDB log transport attached (collection=log_entries, level=info, ttlDays=${logRetentionDays})`
-    );
-
-    // Write a visible startup message to MongoDB so it appears in UI logs
-    setTimeout(async () => {
-      try {
-        await mongooseConnection.db.collection('log_entries').insertOne({
+    // Create a writable stream that inserts into MongoDB
+    const mongoStream = new Writable({
+      objectMode: true,
+      write(chunk, encoding, callback) {
+        if (!logCollection) { callback(); return; }
+        const info = typeof chunk === 'string' ? JSON.parse(chunk) : chunk;
+        logCollection.insertOne({
           timestamp: new Date(),
-          level: 'info',
-          message: '🚀 CoopXV Extract service started - Winston MongoDB transport active',
-          meta: {
-            event: 'service_start',
-            environment: process.env.NODE_ENV || 'production',
-            startedAt: new Date().toISOString()
-          }
-        });
-      } catch (err) {
-        // Ignore write errors on startup
+          level: info.level || 'info',
+          message: info.message || '',
+          meta: info.meta || {}
+        }).catch(() => {}); // fire-and-forget
+        callback();
       }
-    }, 2000);
-
-    // Setup automatic recovery: reattach transport when mongoose reconnects
-    if (!reconnectionListenersAttached) {
-      mongooseConnection.on('disconnected', () => {
-        logger.warn('⚠️  MongoDB disconnected — winston transport will recover on reconnection');
-        mongoTransportAttached = false;
-        // Remove failed transport
-        if (currentMongoTransport) {
-          try {
-            logger.remove(currentMongoTransport);
-            currentMongoTransport = null;
-          } catch (err) {
-            // Ignore removal errors
-          }
-        }
-      });
-
-      mongooseConnection.on('reconnected', () => {
-        logger.info('🔄 MongoDB reconnected — reattaching winston transport...');
-        mongoTransportAttached = false;
-        // Wait a bit for connection to stabilize
-        setTimeout(async () => {
-          try {
-            attachMongoTransport(mongooseConnection);
-            logger.info('✅ Winston MongoDB transport recovered successfully');
-
-            // Write a visible recovery log directly to MongoDB so it appears in the UI
-            try {
-              await mongooseConnection.db.collection('log_entries').insertOne({
-                timestamp: new Date(),
-                level: 'info',
-                message: '🔄 Winston MongoDB transport auto-recovered after disconnection',
-                meta: {
-                  event: 'winston_recovery',
-                  recoveredAt: new Date().toISOString()
-                }
-              });
-            } catch (dbErr) {
-              // If direct write fails, just log to console
-              console.log('Note: Recovery log write to DB failed, but transport is restored');
-            }
-          } catch (err) {
-            logger.error('❌ Failed to recover winston transport:', err.message);
-          }
-        }, 1000);
-      });
-
-      reconnectionListenersAttached = true;
-      logger.info('🔄 MongoDB reconnection recovery enabled for winston transport');
-    }
-  } catch (error) {
-    logger.warn('⚠️  Failed to attach MongoDB log transport; DB logging disabled', {
-      error: error.message
     });
+
+    const transport = new winston.transports.Stream({ stream: mongoStream, level: 'info' });
+    logger.add(transport);
+    mongoTransportAttached = true;
+    logger.info(`ℹ️  MongoDB log transport attached (collection=log_entries, level=info, ttlDays=${logRetentionDays})`);
+  } catch (err) {
+    console.error(`[log-transport] Failed to attach: ${err.message}`);
   }
 }
 
-/**
- * Periodically verify that the Winston MongoDB transport is still writing to log_entries.
- * If no writes detected within the check interval, remove and re-attach the transport.
- *
- * @param {import('mongoose').Connection} mongooseConnection
- * @param {number} checkIntervalMs — how often to run the health check (default: 5 min)
- */
-function startLogHealthCheck(mongooseConnection, checkIntervalMs = 5 * 60 * 1000) {
-  if (healthCheckIntervalHandle) {
-    clearInterval(healthCheckIntervalHandle);
-  }
-
-  lastKnownLogWrite = new Date();
-
-  healthCheckIntervalHandle = setInterval(async () => {
-    if (!mongooseConnection || mongooseConnection.readyState !== 1) {
-      return; // DB not connected, skip check
-    }
-
-    try {
-      const latest = await mongooseConnection.db
-        .collection('log_entries')
-        .find()
-        .sort({ timestamp: -1 })
-        .limit(1)
-        .project({ timestamp: 1 })
-        .toArray();
-
-      if (!latest.length) return;
-
-      const latestTimestamp = new Date(latest[0].timestamp);
-      const staleSince = Date.now() - latestTimestamp.getTime();
-      const staleThresholdMs = checkIntervalMs * 2; // 2x the interval = stale
-
-      if (staleSince > staleThresholdMs) {
-        console.warn(
-          `[log-health-check] log_entries stale for ${Math.round(staleSince / 60000)}min — reattaching Winston MongoDB transport`
-        );
-
-        // Remove dead transport
-        if (currentMongoTransport) {
-          try {
-            logger.remove(currentMongoTransport);
-          } catch (_) { /* ignore */ }
-          currentMongoTransport = null;
-        }
-        mongoTransportAttached = false;
-
-        // Re-attach
-        attachMongoTransport(mongooseConnection);
-
-        if (mongoTransportAttached) {
-          // Write a recovery marker directly so it's visible in UI
-          try {
-            await mongooseConnection.db.collection('log_entries').insertOne({
-              timestamp: new Date(),
-              level: 'warn',
-              message: '🔧 Winston MongoDB transport recovered by health check (was stale)',
-              meta: { event: 'health_check_recovery', staleSinceMs: staleSince }
-            });
-          } catch (_) { /* ignore */ }
-          console.log('[log-health-check] Transport re-attached successfully');
-        }
-      } else {
-        lastKnownLogWrite = latestTimestamp;
-      }
-    } catch (err) {
-      console.warn(`[log-health-check] Check failed: ${err.message}`);
-    }
-  }, checkIntervalMs);
-
-  // Don't let the health check keep the process alive on shutdown
-  if (healthCheckIntervalHandle.unref) {
-    healthCheckIntervalHandle.unref();
-  }
-
-  logger.info(`🩺 Log health check enabled (interval: ${checkIntervalMs / 60000}min)`);
-}
-
-/** Stop the log health check interval. */
-function stopLogHealthCheck() {
-  if (healthCheckIntervalHandle) {
-    clearInterval(healthCheckIntervalHandle);
-    healthCheckIntervalHandle = null;
-  }
-}
+function startLogHealthCheck() {}
+function stopLogHealthCheck() {}
 
 /** Path for daily scan-results Excel file (Israel date). */
 function getScanResultsExcelPath() {

@@ -543,14 +543,8 @@ async function runScan() {
             if (rowsEqual) {
               isNewRow = false;
             } else {
-              // Debug: Log why comparison failed for this specific file
-              const { data: candidateData } = buildDataAndMetadataFromRow(rowData);
-              const storedDataText = normalizeStoredDataToText(previous.data);
               logger.info(
                 `   ↪ Row ${next.rowNumber} content changed for ${filename} [${sheetName}]; will insert new line`
-              );
-              logger.debug(
-                `   Debug: stored keys: ${Object.keys(storedDataText).join(', ')}, candidate keys: ${Object.keys(candidateData).join(', ')}`
               );
             }
           } catch (error) {

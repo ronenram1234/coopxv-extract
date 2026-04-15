@@ -37,7 +37,7 @@ const logger = require('./config/logger');
 const { formatTimestampIsrael, attachMongoTransport, startLogHealthCheck, stopLogHealthCheck } = require('./config/logger');
 
 const SEPARATOR = '='.repeat(70);
-const BUILD_TIMESTAMP = '2026-04-15 13:48 IST';
+const BUILD_TIMESTAMP = '2026-04-15 14:08 IST';
 // [2026-02-03] statistics-tracking: Track total scans for shutdown message
 let scanCount = 0;
 let scanLoopAborted = false;
@@ -146,13 +146,10 @@ async function main() {
       logger.info('✅ MongoDB reconnected');
     });
 
-    // Attach MongoDB log transport so application/error logs are also written to the database
+    // Custom mongoose-based log transport (no winston-mongodb dependency)
     if (typeof attachMongoTransport === 'function') {
       attachMongoTransport(connection);
     }
-
-    // Health check: detect and recover silently-dead Winston MongoDB transport
-    startLogHealthCheck(connection, scanInterval * 60 * 1000);
   } catch (error) {
     const details =
       (error && (error.stack || error.message)) || JSON.stringify(error, null, 2) || String(error);
